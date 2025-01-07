@@ -29,12 +29,41 @@ const toolClient = new wxflows({
 const tools = await toolClient.lcTools;
 const toolNode = new ToolNode(tools);
 
-// Connect to the LLM provider
+// Connect to the LLM provider with better tool instructions
 const model = new ChatOpenAI({
   modelName: "gpt-4o",
   openAIApiKey: process.env.OPENAI_API_KEY,
   temperature: 0.7,
   maxTokens: 4096,
+  streaming: true,
+  callbacks: [
+    {
+      handleToolStart: async (
+        tool: Serialized,
+        input: string,
+        runId: string
+      ) => {
+        console.log("🛠️ Tool Start:", {
+          tool: typeof tool === "string" ? tool : tool.id[0],
+          input: typeof input === "string" ? JSON.parse(input) : input,
+          runId,
+        });
+      },
+      handleToolEnd: async (output: string, runId: string) => {
+        console.log("🛠️ Tool End:", {
+          output: typeof output === "string" ? JSON.parse(output) : output,
+          runId,
+        });
+      },
+      handleToolError: async (error: Error, runId: string) => {
+        console.error("🛠️ Tool Error:", {
+          message: error.message,
+          stack: error.stack,
+          runId,
+        });
+      },
+    },
+  ],
 }).bindTools(tools);
 
 // Define the function that determines whether to continue or not
@@ -44,14 +73,29 @@ function shouldContinue(state: typeof StateAnnotation.State) {
 
   // If the LLM makes a tool call, then we route to the "tools" node
   if (lastMessage.tool_calls?.length) {
-    console.log("TOOL_CALL", JSON.stringify(lastMessage.tool_calls));
+    console.log("🔄 Tool Call Details:", {
+      tool_calls: lastMessage.tool_calls.map((call) => {
+        const args =
+          typeof call.args === "string" ? JSON.parse(call.args) : call.args;
+        console.log("📝 GraphQL Query:", {
+          name: call.name,
+          query: args.query,
+          variables: args.variables || "{}",
+          parsed_variables: args.variables ? JSON.parse(args.variables) : {},
+        });
+        return {
+          name: call.name,
+          args,
+        };
+      }),
+    });
     return "tools";
   }
   // Otherwise, we stop (reply to the user)
   return "__end__";
 }
 
-// Define the function that calls the model
+// Define the function that calls the model with better tool instructions
 async function callModel(state: typeof StateAnnotation.State) {
   const systemMessage = new SystemMessage(
     `You are an advanced AI assistant powered by GPT-4. Your responses should be:
@@ -63,8 +107,11 @@ async function callModel(state: typeof StateAnnotation.State) {
 
     When using tools:
     - Only use the tools that are explicitly provided
+    - For GraphQL queries, ALWAYS provide necessary variables in the variables field, even if empty (use "{}")
+    - Structure GraphQL queries properly with all required fields
     - Explain what you're doing when using tools
     - Share the results of tool usage with the user
+    - If a tool call fails, explain the error and try again with corrected parameters
 
     Remember to maintain context across the conversation and refer back to previous messages when relevant.`
   );
