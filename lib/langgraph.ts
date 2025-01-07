@@ -6,7 +6,7 @@ import {
   SystemMessage,
   HumanMessage,
 } from "@langchain/core/messages";
-import { ChatWatsonx } from "@langchain/community/chat_models/ibm";
+import { ChatOpenAI } from "@langchain/openai";
 import { StateGraph } from "@langchain/langgraph";
 import { MemorySaver, Annotation } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
@@ -30,15 +30,14 @@ const tools = await toolClient.lcTools;
 const toolNode = new ToolNode(tools);
 
 // Connect to the LLM provider
-const model = new ChatWatsonx({
-  model: "mistralai/mistral-large",
-  projectId: process.env.WATSONX_AI_PROJECT_ID || "",
-  serviceUrl: process.env.WATSONX_AI_ENDPOINT || "",
-  version: "2024-05-31",
+const model = new ChatOpenAI({
+  modelName: "gpt-4o",
+  openAIApiKey: process.env.OPENAI_API_KEY,
+  temperature: 0.7,
+  maxTokens: 4096,
 }).bindTools(tools);
 
 // Define the function that determines whether to continue or not
-// We can extract the state typing via `StateAnnotation.State`
 function shouldContinue(state: typeof StateAnnotation.State) {
   const messages = state.messages;
   const lastMessage = messages[messages.length - 1] as AIMessage;
@@ -55,7 +54,19 @@ function shouldContinue(state: typeof StateAnnotation.State) {
 // Define the function that calls the model
 async function callModel(state: typeof StateAnnotation.State) {
   const systemMessage = new SystemMessage(
-    "You are a helpful AI assistant. Only use the tools available, don't answer questions based on pre-trained data."
+    `You are an advanced AI assistant powered by GPT-4. Your responses should be:
+    1. Helpful and informative
+    2. Truthful - if you're not sure about something, say so
+    3. Focused on using the available tools rather than your pre-trained knowledge
+    4. Clear and well-structured
+    5. Professional but conversational in tone
+
+    When using tools:
+    - Only use the tools that are explicitly provided
+    - Explain what you're doing when using tools
+    - Share the results of tool usage with the user
+
+    Remember to maintain context across the conversation and refer back to previous messages when relevant.`
   );
 
   const messages = [systemMessage, ...state.messages];
@@ -96,7 +107,7 @@ export async function submitQuestion(
 
     const lastMessage = finalState?.messages[finalState.messages.length - 1];
     if (!lastMessage || !lastMessage.content) {
-      throw new Error("No response received");
+      throw new Error("No response received from GPT-4");
     }
 
     return typeof lastMessage.content === "string"
@@ -104,6 +115,18 @@ export async function submitQuestion(
       : JSON.stringify(lastMessage.content);
   } catch (error) {
     console.error("Error in submitQuestion:", error);
-    return "Something went wrong processing your request";
+
+    // Return more specific error messages
+    if (error instanceof Error) {
+      if (error.message.includes("API key")) {
+        return "Error: Invalid or missing OpenAI API key. Please check your configuration.";
+      } else if (error.message.includes("Invalid message format")) {
+        return "Error: Message format is invalid. Please try again.";
+      } else if (error.message.includes("No response")) {
+        return "Error: No response received from GPT-4. Please try again.";
+      }
+    }
+
+    return "An unexpected error occurred. Please try again later.";
   }
 }
