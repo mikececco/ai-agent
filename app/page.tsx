@@ -9,6 +9,12 @@ interface Message {
   content: string;
 }
 
+interface ClaudeResponse {
+  index: number;
+  type: string;
+  text: string;
+}
+
 export default function Home() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -36,9 +42,27 @@ export default function Home() {
       const response = await submitQuestion([serializedMessage]);
 
       if (response) {
+        // Parse the response if it's a JSON string
+        let content = response;
+        try {
+          const parsedResponse = JSON.parse(response);
+          if (Array.isArray(parsedResponse)) {
+            content = parsedResponse
+              .filter((item: ClaudeResponse) => item.type === "text")
+              .map((item: ClaudeResponse) => item.text)
+              .join("\n");
+          }
+        } catch (error) {
+          // If parsing fails, use the response as is
+          console.log("Using raw response:", response);
+          if (error instanceof Error) {
+            console.warn("JSON parse error:", error.message);
+          }
+        }
+
         const assistantMessage: Message = {
           role: "assistant",
-          content: response,
+          content: content,
         };
         setMessages((prev) => [...prev, assistantMessage]);
       } else {
@@ -59,7 +83,9 @@ export default function Home() {
   return (
     <main className="flex min-h-screen flex-col bg-gray-50">
       <div className="flex-1 w-full max-w-4xl mx-auto p-4 flex flex-col">
-        <h1 className="text-2xl font-bold text-center mb-8">AI Assistant</h1>
+        <h1 className="text-2xl font-bold text-center mb-8 text-gray-900">
+          AI Assistant
+        </h1>
 
         <div className="flex-1 overflow-y-auto mb-4 space-y-4">
           {messages.map((message, index) => (
@@ -73,7 +99,7 @@ export default function Home() {
                 className={`max-w-[80%] rounded-lg p-4 ${
                   message.role === "user"
                     ? "bg-blue-500 text-white"
-                    : "bg-white border border-gray-200"
+                    : "bg-white border border-gray-200 text-gray-800"
                 }`}
               >
                 <p className="whitespace-pre-wrap">{message.content}</p>
@@ -84,13 +110,13 @@ export default function Home() {
             <div className="flex justify-start">
               <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="flex space-x-2">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-gray-600 rounded-full animate-bounce" />
                   <div
-                    className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                    className="w-2 h-2 bg-gray-600 rounded-full animate-bounce"
                     style={{ animationDelay: "0.2s" }}
                   />
                   <div
-                    className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                    className="w-2 h-2 bg-gray-600 rounded-full animate-bounce"
                     style={{ animationDelay: "0.4s" }}
                   />
                 </div>
@@ -105,13 +131,13 @@ export default function Home() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
-            className="flex-1 p-4 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 p-4 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800 placeholder-gray-500"
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="px-6 py-4 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            className="px-6 py-4 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
           >
             Send
           </button>

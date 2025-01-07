@@ -6,6 +6,7 @@ schema
       "curl/index.graphql"
       "google_books/index.graphql"
       "wikipedia/index.graphql"
+      "curl-01/index.graphql"
     ]
   ) {
   query: Query

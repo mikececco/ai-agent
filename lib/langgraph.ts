@@ -6,12 +6,13 @@ import {
   SystemMessage,
   HumanMessage,
 } from "@langchain/core/messages";
-import { ChatOpenAI } from "@langchain/openai";
+import { ChatAnthropic } from "@langchain/anthropic";
 import { StateGraph } from "@langchain/langgraph";
 import { MemorySaver, Annotation } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import wxflows from "@wxflows/sdk/langchain";
 import { Serialized } from "@langchain/core/load/serializable";
+import { MessageContentText } from "@langchain/core/messages";
 
 const StateAnnotation = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
@@ -30,14 +31,33 @@ const tools = await toolClient.lcTools;
 const toolNode = new ToolNode(tools);
 
 // Connect to the LLM provider with better tool instructions
-const model = new ChatOpenAI({
-  modelName: "gpt-4o",
-  openAIApiKey: process.env.OPENAI_API_KEY,
+const model = new ChatAnthropic({
+  modelName: "claude-3-5-sonnet-20241022",
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY,
   temperature: 0.7,
-  // maxTokens: 4096,
-  streaming: true,
+  maxTokens: 4096,
+  clientOptions: {
+    defaultHeaders: {
+      "anthropic-beta": "prompt-caching-2024-07-31",
+    },
+  },
   callbacks: [
     {
+      handleLLMStart: async () => {
+        console.log("🤖 Starting LLM call");
+      },
+      handleLLMEnd: async (output) => {
+        const usage = output.llmOutput?.usage;
+        if (usage) {
+          console.log("📊 Token Usage:", {
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            total_tokens: usage.input_tokens + usage.output_tokens,
+            cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+            cache_read_input_tokens: usage.cache_read_input_tokens || 0,
+          });
+        }
+      },
       handleToolStart: async (
         tool: Serialized,
         input: string,
@@ -97,39 +117,77 @@ function shouldContinue(state: typeof StateAnnotation.State) {
 
 // Define the function that calls the model with better tool instructions
 async function callModel(state: typeof StateAnnotation.State) {
-  const systemMessage = new SystemMessage(
-    `You are an advanced AI assistant powered by GPT-4. Your responses should be:
-    1. Helpful and informative
-    2. Truthful - if you're not sure about something, say so
-    3. Focused on using the available tools rather than your pre-trained knowledge
-    4. Clear and well-structured
-    5. Professional but conversational in tone
+  // System message with cache control
+  const systemMessage = new SystemMessage({
+    content: [
+      {
+        type: "text",
+        text: `You are an AI assistant that uses tools to help answer questions. You have access to several tools that can help you find information and perform tasks.
 
-    When using tools:
-    - Only use the tools that are explicitly provided
-    - For GraphQL queries, ALWAYS provide necessary variables in the variables field as a JSON string
-    - For youtube_transcript tool, always include both videoUrl and langCode (default "en") in the variables
-    - For google_books tool, include q and maxResults in the variables
-    - Structure GraphQL queries to request all available fields shown in the schema
-    - Explain what you're doing when using tools
-    - Share the results of tool usage with the user
-    - If a tool call fails, explain the error and try again with corrected parameters
+When using tools:
+- Only use the tools that are explicitly provided
+- For GraphQL queries, ALWAYS provide necessary variables in the variables field as a JSON string
+- For youtube_transcript tool, always include both videoUrl and langCode (default "en") in the variables
+- For google_books tool, include q and maxResults in the variables
+- Structure GraphQL queries to request all available fields shown in the schema
+- Explain what you're doing when using tools
+- Share the results of tool usage with the user
+- If a tool call fails, explain the error and try again with corrected parameters
+- If prompt is too long, break it down into smaller parts and use the tools to answer each part
 
-    Tool-specific instructions:
-    1. youtube_transcript:
-       - Query: { transcript(videoUrl: $videoUrl, langCode: $langCode) { title captions { text start dur } } }
-       - Variables: { "videoUrl": "https://www.youtube.com/watch?v=VIDEO_ID", "langCode": "en" }
-    
-    2. google_books:
-       - For search: { books(q: $q, maxResults: $maxResults) { volumeId title authors } }
-       - Variables: { "q": "search terms", "maxResults": 5 }
+Tool-specific instructions:
+1. youtube_transcript:
+   - Query: { transcript(videoUrl: $videoUrl, langCode: $langCode) { title captions { text start dur } } }
+   - Variables: { "videoUrl": "https://www.youtube.com/watch?v=VIDEO_ID", "langCode": "en" }
 
-    Remember to maintain context across the conversation and refer back to previous messages when relevant.
-    
-    Dont answer questions that are not related to the tools and dont answer questions that are based on your pre-trained knowledge.`
-  );
+2. google_books:
+   - For search: { books(q: $q, maxResults: $maxResults) { volumeId title authors } }
+   - Variables: { "q": "search terms", "maxResults": 5 }
 
-  const messages = [systemMessage, ...state.messages];
+Remember to maintain context across the conversation and refer back to previous messages when relevant.`,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+  });
+
+  // Get conversation history and add cache control to the last message
+  const conversationHistory = state.messages.map((msg, index) => {
+    // Add cache control to the last message in the conversation
+    if (index === state.messages.length - 1) {
+      const content =
+        typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content) && msg.content[0]?.type === "text"
+            ? msg.content[0].text
+            : String(msg.content);
+
+      if (msg instanceof AIMessage) {
+        return new AIMessage({
+          content: [
+            {
+              type: "text",
+              text: content,
+              cache_control: { type: "ephemeral" },
+            },
+          ],
+        });
+      }
+      if (msg instanceof HumanMessage) {
+        return new HumanMessage({
+          content: [
+            {
+              type: "text",
+              text: content,
+              cache_control: { type: "ephemeral" },
+            },
+          ],
+        });
+      }
+    }
+    return msg;
+  });
+
+  const messages = [systemMessage, ...conversationHistory];
   const response = await model.invoke(messages);
 
   return { messages: [response] };
@@ -153,37 +211,89 @@ export async function submitQuestion(
 ): Promise<string> {
   try {
     const config = { configurable: { thread_id: "42" } };
+
+    // Transform messages to maintain conversation context with caching
+    const formattedMessages = messages.map((msg, index) => {
+      if (msg.type === "constructor") {
+        if (msg.id[0] === "HumanMessage") {
+          // Don't cache the current user message
+          if (index === messages.length - 1) {
+            return new HumanMessage(msg.kwargs.content);
+          }
+          // Cache previous user messages for context
+          return new HumanMessage({
+            content: [
+              {
+                type: "text",
+                text: msg.kwargs.content,
+                cache_control: { type: "ephemeral" },
+              },
+            ],
+          });
+        }
+        if (msg.id[0] === "AIMessage") {
+          // Cache all previous assistant messages for context
+          return new AIMessage({
+            content: [
+              {
+                type: "text",
+                text: msg.kwargs.content,
+                cache_control: { type: "ephemeral" },
+              },
+            ],
+          });
+        }
+        if (msg.id[0] === "SystemMessage") {
+          return new SystemMessage({
+            content: [
+              {
+                type: "text",
+                text: msg.kwargs.content,
+                cache_control: { type: "ephemeral" },
+              },
+            ],
+          });
+        }
+      }
+      throw new Error("Invalid message format");
+    });
+
+    console.log("📝 Formatted Messages:", formattedMessages);
     const finalState = await app.invoke(
       {
-        messages: messages.map((msg) => {
-          if (msg.type === "constructor" && msg.id[0] === "HumanMessage") {
-            return new HumanMessage(msg.kwargs.content as string);
-          }
-          throw new Error("Invalid message format");
-        }),
+        messages: formattedMessages,
       },
       config
     );
 
     const lastMessage = finalState?.messages[finalState.messages.length - 1];
     if (!lastMessage || !lastMessage.content) {
-      throw new Error("No response received from GPT-4");
+      throw new Error("No response received from Claude");
     }
 
-    return typeof lastMessage.content === "string"
-      ? lastMessage.content
-      : JSON.stringify(lastMessage.content);
+    // Handle both string and structured responses
+    if (typeof lastMessage.content === "string") {
+      return lastMessage.content;
+    }
+
+    // Handle structured response format
+    return lastMessage.content
+      .filter(
+        (content): content is MessageContentText =>
+          content.type === "text" && "text" in content
+      )
+      .map((content) => content.text)
+      .join("\n");
   } catch (error) {
     console.error("Error in submitQuestion:", error);
 
-    // Return more specific error messages
     if (error instanceof Error) {
       if (error.message.includes("API key")) {
-        return "Error: Invalid or missing OpenAI API key. Please check your configuration.";
+        return "Error: Invalid or missing Anthropic API key. Please check your configuration.";
       } else if (error.message.includes("Invalid message format")) {
         return "Error: Message format is invalid. Please try again.";
       } else if (error.message.includes("No response")) {
-        return "Error: No response received from GPT-4. Please try again.";
+        return "Error: No response received from Claude. Please try again.";
       }
     }
 
