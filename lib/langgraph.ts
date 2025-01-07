@@ -34,7 +34,7 @@ const model = new ChatOpenAI({
   modelName: "gpt-4o",
   openAIApiKey: process.env.OPENAI_API_KEY,
   temperature: 0.7,
-  maxTokens: 4096,
+  // maxTokens: 4096,
   streaming: true,
   callbacks: [
     {
@@ -107,13 +107,26 @@ async function callModel(state: typeof StateAnnotation.State) {
 
     When using tools:
     - Only use the tools that are explicitly provided
-    - For GraphQL queries, ALWAYS provide necessary variables in the variables field, even if empty (use "{}")
-    - Structure GraphQL queries properly with all required fields
+    - For GraphQL queries, ALWAYS provide necessary variables in the variables field as a JSON string
+    - For youtube_transcript tool, always include both videoUrl and langCode (default "en") in the variables
+    - For google_books tool, include q and maxResults in the variables
+    - Structure GraphQL queries to request all available fields shown in the schema
     - Explain what you're doing when using tools
     - Share the results of tool usage with the user
     - If a tool call fails, explain the error and try again with corrected parameters
 
-    Remember to maintain context across the conversation and refer back to previous messages when relevant.`
+    Tool-specific instructions:
+    1. youtube_transcript:
+       - Query: { transcript(videoUrl: $videoUrl, langCode: $langCode) { title captions { text start dur } } }
+       - Variables: { "videoUrl": "https://www.youtube.com/watch?v=VIDEO_ID", "langCode": "en" }
+    
+    2. google_books:
+       - For search: { books(q: $q, maxResults: $maxResults) { volumeId title authors } }
+       - Variables: { "q": "search terms", "maxResults": 5 }
+
+    Remember to maintain context across the conversation and refer back to previous messages when relevant.
+    
+    Dont answer questions that are not related to the tools and dont answer questions that are based on your pre-trained knowledge.`
   );
 
   const messages = [systemMessage, ...state.messages];
