@@ -45,10 +45,10 @@ export const send = mutation({
       throw new Error("Unauthorized");
     }
 
-    // Save the user message
+    // Save the user message with preserved newlines
     const messageId = await ctx.db.insert("messages", {
       chatId: args.chatId,
-      content: args.content,
+      content: args.content.replace(/\n/g, "\\n"),
       role: "user",
       createdAt: Date.now(),
     });
@@ -75,9 +75,10 @@ export const store = mutation({
       contentLength: args.content.length,
     });
 
+    // Store message with preserved newlines
     const messageId = await ctx.db.insert("messages", {
       chatId: args.chatId,
-      content: args.content,
+      content: args.content.replace(/\n/g, "\\n"),
       role: args.role,
       createdAt: Date.now(),
     });

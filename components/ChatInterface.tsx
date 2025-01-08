@@ -60,7 +60,9 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
                   : "bg-gray-200 text-black"
               }`}
             >
-              {message.content}
+              <div className="whitespace-pre-wrap">
+                {message.content.replace(/\\n/g, "\n")}
+              </div>
             </div>
           </div>
         ))}
