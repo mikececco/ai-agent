@@ -210,8 +210,9 @@ const checkpointer = new MemorySaver();
 const app = workflow.compile({ checkpointer });
 
 export async function submitQuestion(
-  messages: Array<Serialized>
-): Promise<string> {
+  messages: Array<Serialized>,
+  stream = false
+): Promise<string | ReadableStream<string>> {
   try {
     const config = { configurable: { thread_id: "42" } };
 
@@ -265,32 +266,76 @@ export async function submitQuestion(
       throw new Error("Invalid message format");
     });
 
-    console.log("📝 Formatted Messages:", formattedMessages);
-    const finalState = await app.invoke(
-      {
-        messages: formattedMessages,
-      },
-      config
-    );
+    if (stream) {
+      // Return a ReadableStream for streaming responses
+      return new ReadableStream({
+        async start(controller) {
+          try {
+            const finalState = await app.invoke(
+              {
+                messages: formattedMessages,
+              },
+              config
+            );
 
-    const lastMessage = finalState?.messages[finalState.messages.length - 1];
-    if (!lastMessage || !lastMessage.content) {
-      throw new Error("No response received from Claude");
+            const lastMessage =
+              finalState?.messages[finalState.messages.length - 1];
+            if (!lastMessage || !lastMessage.content) {
+              throw new Error("No response received from Claude");
+            }
+
+            // Handle both string and structured responses
+            let response = "";
+            if (typeof lastMessage.content === "string") {
+              response = lastMessage.content;
+            } else {
+              response = lastMessage.content
+                .filter(
+                  (content): content is MessageContentText =>
+                    content.type === "text" && "text" in content
+                )
+                .map((content) => content.text)
+                .join("\n");
+            }
+
+            // Stream the response character by character
+            for (const char of response) {
+              controller.enqueue(char);
+              await new Promise((resolve) => setTimeout(resolve, 10)); // Add small delay for natural feel
+            }
+            controller.close();
+          } catch (error) {
+            controller.error(error);
+          }
+        },
+      });
+    } else {
+      // Regular non-streaming response
+      const finalState = await app.invoke(
+        {
+          messages: formattedMessages,
+        },
+        config
+      );
+
+      const lastMessage = finalState?.messages[finalState.messages.length - 1];
+      if (!lastMessage || !lastMessage.content) {
+        throw new Error("No response received from Claude");
+      }
+
+      // Handle both string and structured responses
+      if (typeof lastMessage.content === "string") {
+        return lastMessage.content;
+      }
+
+      return lastMessage.content
+        .filter(
+          (content): content is MessageContentText =>
+            content.type === "text" && "text" in content
+        )
+        .map((content) => content.text)
+        .join("\n");
     }
-
-    // Handle both string and structured responses
-    if (typeof lastMessage.content === "string") {
-      return lastMessage.content;
-    }
-
-    // Handle structured response format
-    return lastMessage.content
-      .filter(
-        (content): content is MessageContentText =>
-          content.type === "text" && "text" in content
-      )
-      .map((content) => content.text)
-      .join("\n");
   } catch (error) {
     console.error("Error in submitQuestion:", error);
 

@@ -6,45 +6,53 @@ import { submitQuestion } from "@/lib/langgraph";
 export async function generateAIResponse(
   client: ConvexReactClient,
   chatId: Id<"chats">,
-  content: string
+  content: string,
+  onStream: (chunk: string) => void
 ) {
   console.log("🤖 Generating AI response:", {
     chatId,
     contentLength: content.length,
   });
 
-  // Get AI response using langgraph
-  const aiResponse = await submitQuestion([
-    {
-      lc: 1,
-      type: "constructor",
-      id: ["HumanMessage"],
-      kwargs: {
-        content,
-      },
-    },
-  ]);
+  try {
+    // Get AI response using langgraph with streaming
+    const stream = await submitQuestion(
+      [
+        {
+          lc: 1,
+          type: "constructor",
+          id: ["HumanMessage"],
+          kwargs: {
+            content,
+          },
+        },
+      ],
+      true
+    ); // Enable streaming
 
-  if (!aiResponse) {
-    throw new Error("Failed to generate AI response");
+    let fullResponse = "";
+
+    // Process each chunk from the stream
+    for await (const chunk of stream) {
+      fullResponse += chunk;
+      onStream(fullResponse); // Send current state to UI
+    }
+
+    // Store the complete response in Convex
+    await client.mutation(api.messages.store, {
+      chatId,
+      content: fullResponse,
+      role: "assistant",
+    });
+
+    console.log("✅ Stored AI response:", {
+      chatId,
+      contentLength: fullResponse.length,
+    });
+
+    return fullResponse;
+  } catch (error) {
+    console.error("Error generating AI response:", error);
+    throw error;
   }
-
-  console.log("✨ Generated AI response:", {
-    chatId,
-    contentLength: aiResponse.length,
-  });
-
-  // Store the AI response in Convex
-  await client.mutation(api.messages.store, {
-    chatId,
-    content: aiResponse,
-    role: "assistant",
-  });
-
-  console.log("✅ Stored AI response:", {
-    chatId,
-    contentLength: aiResponse.length,
-  });
-
-  return aiResponse;
 }

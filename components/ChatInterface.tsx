@@ -13,11 +13,12 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
   const messages = useQuery(api.messages.list, { chatId });
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [streamedResponse, setStreamedResponse] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, streamedResponse]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,6 +26,7 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
     if (!trimmedInput || isLoading) return;
 
     setInput("");
+    setStreamedResponse("");
 
     try {
       // Send user message first
@@ -35,11 +37,14 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
 
       // Then show loading and generate AI response
       setIsLoading(true);
-      await generateAIResponse(convex, chatId, trimmedInput);
+      await generateAIResponse(convex, chatId, trimmedInput, (chunk) => {
+        setStreamedResponse(chunk);
+      });
     } catch (error) {
       console.error("Error sending message:", error);
     } finally {
       setIsLoading(false);
+      setStreamedResponse("");
     }
   };
 
@@ -66,7 +71,16 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
             </div>
           </div>
         ))}
-        {isLoading && (
+        {streamedResponse && (
+          <div className="flex justify-start">
+            <div className="max-w-[80%] rounded-lg p-3 bg-gray-200 text-black">
+              <div className="whitespace-pre-wrap">
+                {streamedResponse.replace(/\\n/g, "\n")}
+              </div>
+            </div>
+          </div>
+        )}
+        {isLoading && !streamedResponse && (
           <div className="flex justify-start">
             <div className="max-w-[80%] rounded-lg p-3 bg-gray-200 text-black">
               <div className="flex items-center gap-2">
