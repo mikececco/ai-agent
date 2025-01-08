@@ -26,12 +26,21 @@ function ChatRow({
       onClick={() => router.push(`/dashboard/chat/${chat._id}`)}
     >
       <div className="p-4">
-        <div className="flex justify-between items-start mb-2">
-          <h3 className="font-medium truncate">{chat.title}</h3>
+        <div className="flex justify-between items-start">
+          <p className="text-sm text-gray-500 truncate flex-1">
+            {lastMessage ? (
+              <>
+                {lastMessage.role === "user" ? "You: " : "AI: "}
+                {lastMessage.content}
+              </>
+            ) : (
+              <span className="text-gray-400">New conversation</span>
+            )}
+          </p>
           <Button
             variant="ghost"
             size="icon"
-            className="opacity-0 group-hover:opacity-100 -mr-2 -mt-2"
+            className="opacity-0 group-hover:opacity-100 -mr-2 -mt-2 ml-2"
             onClick={(e) => {
               e.stopPropagation();
               onDelete(chat._id);
@@ -40,17 +49,10 @@ function ChatRow({
             <TrashIcon className="h-4 w-4 text-gray-500 hover:text-red-500" />
           </Button>
         </div>
-
         {lastMessage && (
-          <>
-            <p className="text-sm text-gray-500 truncate">
-              {lastMessage.role === "user" ? "You: " : "AI: "}
-              {lastMessage.content}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              <TimeAgo date={lastMessage.createdAt} />
-            </p>
-          </>
+          <p className="text-xs text-gray-400 mt-1">
+            <TimeAgo date={lastMessage.createdAt} />
+          </p>
         )}
       </div>
     </div>
@@ -75,8 +77,12 @@ export default function Sidebar() {
   return (
     <div className="w-64 bg-gray-50 border-r h-full flex flex-col">
       <div className="p-4">
-        <Button onClick={handleNewChat} className="w-full">
-          <PlusIcon className="mr-2" /> New Chat
+        <Button
+          onClick={handleNewChat}
+          className="w-full bg-blue-500 hover:bg-blue-600"
+        >
+          <PlusIcon className="mr-2 h-5 w-5" />
+          Start a new conversation
         </Button>
       </div>
 
