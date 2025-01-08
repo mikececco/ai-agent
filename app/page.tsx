@@ -1,148 +1,27 @@
-"use client";
+import { SignInButton } from "@clerk/nextjs";
+import { ArrowRight } from "lucide-react";
 
-import { useState } from "react";
-import { submitQuestion } from "@/lib/langgraph";
-import { Serialized } from "@langchain/core/load/serializable";
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
-
-interface ClaudeResponse {
-  index: number;
-  type: string;
-  text: string;
-}
-
-export default function Home() {
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: Message = { role: "user", content: input };
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setIsLoading(true);
-
-    try {
-      const serializedMessage: Serialized = {
-        type: "constructor",
-        id: ["HumanMessage"],
-        kwargs: {
-          content: input,
-        },
-        lc: 1,
-      };
-
-      const response = await submitQuestion([serializedMessage]);
-
-      if (response) {
-        // Parse the response if it's a JSON string
-        let content = response;
-        try {
-          const parsedResponse = JSON.parse(response);
-          if (Array.isArray(parsedResponse)) {
-            content = parsedResponse
-              .filter((item: ClaudeResponse) => item.type === "text")
-              .map((item: ClaudeResponse) => item.text)
-              .join("\n");
-          }
-        } catch (error) {
-          // If parsing fails, use the response as is
-          console.log("Using raw response:", response);
-          if (error instanceof Error) {
-            console.warn("JSON parse error:", error.message);
-          }
-        }
-
-        const assistantMessage: Message = {
-          role: "assistant",
-          content: content,
-        };
-        setMessages((prev) => [...prev, assistantMessage]);
-      } else {
-        throw new Error("No response received");
-      }
-    } catch (error) {
-      console.error("Error:", error);
-      const errorMessage: Message = {
-        role: "assistant",
-        content: "Sorry, something went wrong. Please try again.",
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+export default function LandingPage() {
   return (
-    <main className="flex min-h-screen flex-col bg-gray-50">
-      <div className="flex-1 w-full max-w-4xl mx-auto p-4 flex flex-col">
-        <h1 className="text-2xl font-bold text-center mb-8 text-gray-900">
-          AI Assistant
-        </h1>
-
-        <div className="flex-1 overflow-y-auto mb-4 space-y-4">
-          {messages.map((message, index) => (
-            <div
-              key={index}
-              className={`flex ${
-                message.role === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
-              <div
-                className={`max-w-[80%] rounded-lg p-4 ${
-                  message.role === "user"
-                    ? "bg-blue-500 text-white"
-                    : "bg-white border border-gray-200 text-gray-800"
-                }`}
-              >
-                <p className="whitespace-pre-wrap">{message.content}</p>
-              </div>
-            </div>
-          ))}
-          {isLoading && (
-            <div className="flex justify-start">
-              <div className="bg-white border border-gray-200 rounded-lg p-4">
-                <div className="flex space-x-2">
-                  <div className="w-2 h-2 bg-gray-600 rounded-full animate-bounce" />
-                  <div
-                    className="w-2 h-2 bg-gray-600 rounded-full animate-bounce"
-                    style={{ animationDelay: "0.2s" }}
-                  />
-                  <div
-                    className="w-2 h-2 bg-gray-600 rounded-full animate-bounce"
-                    style={{ animationDelay: "0.4s" }}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
+    <div className="flex-1 flex flex-col items-center justify-center min-h-screen">
+      <div className="px-4 py-8 mx-auto max-w-7xl sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center space-y-8 text-center">
+          <div className="space-y-4">
+            <h1 className="text-4xl font-bold tracking-tighter sm:text-6xl">
+              AI Chat Assistant
+            </h1>
+            <p className="max-w-[600px] text-zinc-500 md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed dark:text-zinc-400">
+              Your intelligent chat companion powered by Claude AI. Experience
+              seamless conversations with advanced language understanding.
+            </p>
+          </div>
+          <SignInButton mode="modal" forceRedirectUrl={"/dashboard"}>
+            <button className="inline-flex items-center justify-center px-6 py-3 text-base font-medium text-white bg-black rounded-lg hover:bg-gray-800 transition-colors">
+              Get Started <ArrowRight className="ml-2 h-5 w-5" />
+            </button>
+          </SignInButton>
         </div>
-
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message..."
-            className="flex-1 p-4 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800 placeholder-gray-500"
-            disabled={isLoading}
-          />
-          <button
-            type="submit"
-            disabled={isLoading || !input.trim()}
-            className="px-6 py-4 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-          >
-            Send
-          </button>
-        </form>
       </div>
-    </main>
+    </div>
   );
 }

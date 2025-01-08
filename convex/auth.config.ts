@@ -1,7 +1,7 @@
 export default {
   providers: [
     {
-      domain: "https://enabled-muskox-44.clerk.accounts.dev",
+      domain: process.env.CLERK_ISSUER_URL!,
       applicationID: "convex",
     },
   ],

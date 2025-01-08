@@ -118,6 +118,7 @@ function shouldContinue(state: typeof StateAnnotation.State) {
 // Define the function that calls the model with better tool instructions
 async function callModel(state: typeof StateAnnotation.State) {
   // System message with cache control
+  console.log("🔒 Setting cache control: System Message");
   const systemMessage = new SystemMessage({
     content: [
       {
@@ -154,6 +155,7 @@ Remember to maintain context across the conversation and refer back to previous 
   const conversationHistory = state.messages.map((msg, index) => {
     // Add cache control to the last message in the conversation
     if (index === state.messages.length - 1) {
+      console.log("🔒 Setting cache control: Last Message in Conversation");
       const content =
         typeof msg.content === "string"
           ? msg.content
@@ -188,6 +190,7 @@ Remember to maintain context across the conversation and refer back to previous 
   });
 
   const messages = [systemMessage, ...conversationHistory];
+
   const response = await model.invoke(messages);
 
   return { messages: [response] };
@@ -218,9 +221,11 @@ export async function submitQuestion(
         if (msg.id[0] === "HumanMessage") {
           // Don't cache the current user message
           if (index === messages.length - 1) {
+            console.log("⚡ Skipping cache for current user message");
             return new HumanMessage(msg.kwargs.content);
           }
           // Cache previous user messages for context
+          console.log("🔒 Setting cache control: Previous User Message");
           return new HumanMessage({
             content: [
               {
@@ -233,6 +238,7 @@ export async function submitQuestion(
         }
         if (msg.id[0] === "AIMessage") {
           // Cache all previous assistant messages for context
+          console.log("🔒 Setting cache control: Assistant Message");
           return new AIMessage({
             content: [
               {
@@ -244,6 +250,7 @@ export async function submitQuestion(
           });
         }
         if (msg.id[0] === "SystemMessage") {
+          console.log("🔒 Setting cache control: System Message");
           return new SystemMessage({
             content: [
               {
