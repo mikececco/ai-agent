@@ -13,16 +13,6 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
   const [isLoading, setIsLoading] = useState(false);
   const [streamedResponse, setStreamedResponse] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    const cleanup = () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-    return cleanup;
-  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -43,19 +33,11 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
     const trimmedInput = input.trim();
     if (!trimmedInput || isLoading) return;
 
-    // Cancel any ongoing streams
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
     setInput("");
     setStreamedResponse("");
     setIsLoading(true);
 
     try {
-      // Create a new AbortController for this stream
-      abortControllerRef.current = new AbortController();
-
       const response = await fetch("/api/chat/stream", {
         method: "POST",
         headers: {
@@ -74,7 +56,6 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
           ],
           chatId,
         }),
-        signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok) {
@@ -132,7 +113,6 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
       console.error("Error sending message:", error);
     } finally {
       setIsLoading(false);
-      abortControllerRef.current = null;
     }
   };
 
