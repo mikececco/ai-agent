@@ -128,7 +128,7 @@ function shouldContinue(state: typeof StateAnnotation.State) {
 }
 
 // Define a new graph
-const createWorkflow = (onToken?: (token: string) => void) => {
+const createWorkflow = (chatId: string, onToken?: (token: string) => void) => {
   const model = initialiseModel(onToken);
 
   return new StateGraph(StateAnnotation)
@@ -221,8 +221,8 @@ export async function submitQuestion(
   onToken?: (token: string) => void
 ): Promise<string | ReadableStream<string>> {
   try {
-    // Create workflow with onToken callback
-    const workflow = createWorkflow(onToken);
+    // Create workflow with chatId and onToken callback
+    const workflow = createWorkflow(chatId, onToken);
     const checkpointer = new MemorySaver();
     const app = workflow.compile({ checkpointer });
 
@@ -278,27 +278,39 @@ export async function submitQuestion(
 
     const config = { configurable: { thread_id: chatId } };
 
-    const response = await app.invoke({ messages: formattedMessages }, config);
-    const lastMessage = response.messages[
-      response.messages.length - 1
-    ] as AIMessage;
+    console.log("🔒🔒🔒 Config thread_id:", chatId);
+    const stream = await app.stream(
+      { messages: formattedMessages },
+      {
+        configurable: {},
+      }
+    );
+    let fullResponse = "";
 
-    if (!lastMessage.content) {
+    for await (const chunk of stream) {
+      const lastMessage = chunk.messages[
+        chunk.messages.length - 1
+      ] as AIMessage;
+      if (lastMessage.content) {
+        if (typeof lastMessage.content === "string") {
+          fullResponse = lastMessage.content;
+        } else {
+          fullResponse = lastMessage.content
+            .filter(
+              (content): content is MessageContentText =>
+                content.type === "text" && "text" in content
+            )
+            .map((content) => content.text)
+            .join("\n");
+        }
+      }
+    }
+
+    if (!fullResponse) {
       throw new Error("No response received from Claude");
     }
 
-    // Handle both string and structured responses
-    if (typeof lastMessage.content === "string") {
-      return lastMessage.content;
-    }
-
-    return lastMessage.content
-      .filter(
-        (content): content is MessageContentText =>
-          content.type === "text" && "text" in content
-      )
-      .map((content) => content.text)
-      .join("\n");
+    return fullResponse;
   } catch (error) {
     console.error("Error in submitQuestion:", error);
 
