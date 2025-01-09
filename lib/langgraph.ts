@@ -2,22 +2,15 @@
 
 import {
   AIMessage,
-  BaseMessage,
   SystemMessage,
   HumanMessage,
 } from "@langchain/core/messages";
 import { ChatAnthropic } from "@langchain/anthropic";
-import { StateGraph } from "@langchain/langgraph";
-import { MemorySaver, Annotation } from "@langchain/langgraph";
+import { MessagesAnnotation, StateGraph } from "@langchain/langgraph";
+import { MemorySaver } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import wxflows from "@wxflows/sdk/langchain";
 import { Serialized } from "@langchain/core/load/serializable";
-
-const StateAnnotation = Annotation.Root({
-  messages: Annotation<BaseMessage[]>({
-    reducer: (x, y) => x.concat(y),
-  }),
-});
 
 // Connect to wxflows
 const toolClient = new wxflows({
@@ -99,7 +92,7 @@ const initialiseModel = (onToken?: (token: string) => void) => {
 };
 
 // Define the function that determines whether to continue or not
-function shouldContinue(state: typeof StateAnnotation.State) {
+function shouldContinue(state: typeof MessagesAnnotation.State) {
   const messages = state.messages;
   const lastMessage = messages[messages.length - 1] as AIMessage;
 
@@ -131,7 +124,7 @@ function shouldContinue(state: typeof StateAnnotation.State) {
 const createWorkflow = (chatId: string, onToken?: (token: string) => void) => {
   const model = initialiseModel(onToken);
 
-  return new StateGraph(StateAnnotation)
+  return new StateGraph(MessagesAnnotation)
     .addNode("agent", async (state) => {
       // System message with cache control
       console.log("🔒 Setting cache control: System Message");
@@ -172,6 +165,7 @@ Remember to maintain context across the conversation and refer back to previous 
       });
 
       const messages = [systemMessage, ...state.messages];
+
       const response = await model.invoke(messages);
       return { messages: [response] };
     })
@@ -262,25 +256,9 @@ export async function submitQuestion(
     const config = { configurable: { thread_id: chatId } };
 
     console.log("🔒🔒🔒 Config thread_id:", chatId);
-    const stream = await app.stream({ messages: formattedMessages }, config);
+    await app.invoke({ messages: formattedMessages }, config);
 
-    let fullResponse = "";
-
-    for await (const chunk of stream) {
-      console.log("CHUNK", chunk);
-      if (chunk.content) {
-        fullResponse += chunk.content;
-        if (onToken) {
-          await onToken(chunk.content);
-        }
-      }
-    }
-
-    if (!fullResponse) {
-      throw new Error("No response received from Claude");
-    }
-
-    return fullResponse;
+    return "done";
   } catch (error) {
     console.error("Error in submitQuestion:", error);
 
