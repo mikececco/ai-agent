@@ -44,6 +44,48 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
     });
   };
 
+  const formatStreamingCommandOutput = (text: string, isStreaming: boolean) => {
+    if (!isStreaming) {
+      return formatCommandOutput(text);
+    }
+
+    // If we have a complete command block
+    if (text.includes("---START---") && text.includes("---END---")) {
+      const beforeStart = text.split("---START---")[0];
+      const middle = text.split("---START---")[1].split("---END---")[0];
+      const afterEnd = text.split("---END---")[1];
+
+      return `${beforeStart}<div class="bg-[#1e1e1e] text-white font-mono p-2 rounded-md my-2 overflow-x-auto whitespace-normal">
+        <div class="flex items-center gap-1.5 border-b border-gray-700 pb-1">
+          <span class="text-red-500">●</span>
+          <span class="text-yellow-500">●</span>
+          <span class="text-green-500">●</span>
+          <span class="text-gray-400 ml-1 text-sm">~/Executing...</span>
+        </div>
+        <div class="text-gray-400 mt-1">$ query</div>
+        <pre class="text-green-400 mt-0.5">${middle.trim()}</pre>
+      </div>${afterEnd}`;
+    }
+
+    // If we're starting a command block
+    if (text.includes("---START---")) {
+      const [beforeStart, content] = text.split("---START---");
+      return `${beforeStart}<div class="bg-[#1e1e1e] text-white font-mono p-2 rounded-md my-2 overflow-x-auto whitespace-normal">
+        <div class="flex items-center gap-1.5 border-b border-gray-700 pb-1">
+          <span class="text-red-500">●</span>
+          <span class="text-yellow-500">●</span>
+          <span class="text-green-500">●</span>
+          <span class="text-gray-400 ml-1 text-sm">~/Executing...</span>
+        </div>
+        <div class="text-gray-400 mt-1">$ query</div>
+        <pre class="text-green-400 mt-0.5">${content}</pre>
+      </div>`;
+    }
+
+    // If we're in the middle of a command block, just return the text as is
+    return text;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedInput = input.trim();
@@ -162,8 +204,9 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
                   dangerouslySetInnerHTML={{
                     __html:
                       message.role === "assistant"
-                        ? formatCommandOutput(
-                            message.content.replace(/\\n/g, "\n")
+                        ? formatStreamingCommandOutput(
+                            message.content.replace(/\\n/g, "\n"),
+                            false
                           )
                         : message.content.replace(/\\n/g, "\n"),
                   }}
@@ -178,8 +221,9 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
               <div className="whitespace-pre-wrap">
                 <div
                   dangerouslySetInnerHTML={{
-                    __html: formatCommandOutput(
-                      streamedResponse.replace(/\\n/g, "\n")
+                    __html: formatStreamingCommandOutput(
+                      streamedResponse.replace(/\\n/g, "\n"),
+                      true
                     ),
                   }}
                 />
