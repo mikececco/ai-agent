@@ -36,6 +36,7 @@ const model = new ChatAnthropic({
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
   temperature: 0.7,
   maxTokens: 4096,
+  streaming: true,
   clientOptions: {
     defaultHeaders: {
       "anthropic-beta": "prompt-caching-2024-07-31",
@@ -57,6 +58,9 @@ const model = new ChatAnthropic({
             cache_read_input_tokens: usage.cache_read_input_tokens || 0,
           });
         }
+      },
+      handleLLMNewToken: async (token: string) => {
+        console.log("🔤 New token:", token);
       },
       handleToolStart: async (
         tool: Serialized,
@@ -211,10 +215,29 @@ const app = workflow.compile({ checkpointer });
 
 export async function submitQuestion(
   messages: Array<Serialized>,
-  stream = false
+  stream = false,
+  onToken?: (token: string) => void
 ): Promise<string | ReadableStream<string>> {
   try {
-    const config = { configurable: { thread_id: "42" } };
+    const model = new ChatAnthropic({
+      modelName: "claude-3-sonnet-20240229",
+      anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+      temperature: 0.7,
+      maxTokens: 4096,
+      streaming: stream,
+      callbacks: stream
+        ? [
+            {
+              handleLLMNewToken: async (token: string) => {
+                console.log("🔤 Streaming token:", token);
+                if (onToken) {
+                  await onToken(token);
+                }
+              },
+            },
+          ]
+        : undefined,
+    });
 
     // Transform messages to maintain conversation context with caching
     const formattedMessages = messages.map((msg, index) => {
@@ -266,76 +289,24 @@ export async function submitQuestion(
       throw new Error("Invalid message format");
     });
 
-    if (stream) {
-      // Return a ReadableStream for streaming responses
-      return new ReadableStream({
-        async start(controller) {
-          try {
-            const finalState = await app.invoke(
-              {
-                messages: formattedMessages,
-              },
-              config
-            );
+    const response = await model.invoke(formattedMessages);
 
-            const lastMessage =
-              finalState?.messages[finalState.messages.length - 1];
-            if (!lastMessage || !lastMessage.content) {
-              throw new Error("No response received from Claude");
-            }
-
-            // Handle both string and structured responses
-            let response = "";
-            if (typeof lastMessage.content === "string") {
-              response = lastMessage.content;
-            } else {
-              response = lastMessage.content
-                .filter(
-                  (content): content is MessageContentText =>
-                    content.type === "text" && "text" in content
-                )
-                .map((content) => content.text)
-                .join("\n");
-            }
-
-            // Stream the response character by character
-            for (const char of response) {
-              controller.enqueue(char);
-              await new Promise((resolve) => setTimeout(resolve, 10)); // Add small delay for natural feel
-            }
-            controller.close();
-          } catch (error) {
-            controller.error(error);
-          }
-        },
-      });
-    } else {
-      // Regular non-streaming response
-      const finalState = await app.invoke(
-        {
-          messages: formattedMessages,
-        },
-        config
-      );
-
-      const lastMessage = finalState?.messages[finalState.messages.length - 1];
-      if (!lastMessage || !lastMessage.content) {
-        throw new Error("No response received from Claude");
-      }
-
-      // Handle both string and structured responses
-      if (typeof lastMessage.content === "string") {
-        return lastMessage.content;
-      }
-
-      return lastMessage.content
-        .filter(
-          (content): content is MessageContentText =>
-            content.type === "text" && "text" in content
-        )
-        .map((content) => content.text)
-        .join("\n");
+    if (!response.content) {
+      throw new Error("No response received from Claude");
     }
+
+    // Handle both string and structured responses
+    if (typeof response.content === "string") {
+      return response.content;
+    }
+
+    return response.content
+      .filter(
+        (content): content is MessageContentText =>
+          content.type === "text" && "text" in content
+      )
+      .map((content) => content.text)
+      .join("\n");
   } catch (error) {
     console.error("Error in submitQuestion:", error);
 

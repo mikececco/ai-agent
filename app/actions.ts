@@ -15,8 +15,10 @@ export async function generateAIResponse(
   });
 
   try {
+    let fullResponse = "";
+
     // Get AI response using langgraph with streaming
-    const stream = await submitQuestion(
+    const response = await submitQuestion(
       [
         {
           lc: 1,
@@ -27,15 +29,18 @@ export async function generateAIResponse(
           },
         },
       ],
-      true
-    ); // Enable streaming
+      true,
+      (token) => {
+        // Accumulate tokens and stream the full response so far
+        fullResponse += token;
+        onStream(fullResponse);
+      }
+    );
 
-    let fullResponse = "";
-
-    // Process each chunk from the stream
-    for await (const chunk of stream) {
-      fullResponse += chunk;
-      onStream(fullResponse); // Send current state to UI
+    // If we got a string response instead of streaming, use it
+    if (typeof response === "string") {
+      fullResponse = response;
+      onStream(fullResponse);
     }
 
     // Store the complete response in Convex

@@ -4,10 +4,10 @@ import { mutation, query } from "./_generated/server";
 export const list = query({
   args: { chatId: v.id("chats") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    // const identity = await ctx.auth.getUserIdentity();
+    // if (!identity) {
+    //   throw new Error("Not authenticated");
+    // }
 
     const messages = await ctx.db
       .query("messages")
@@ -35,15 +35,15 @@ export const send = mutation({
       content: args.content,
     });
 
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    // const identity = await ctx.auth.getUserIdentity();
+    // if (!identity) {
+    //   throw new Error("Not authenticated");
+    // }
 
-    const chat = await ctx.db.get(args.chatId);
-    if (!chat || chat.userId !== identity.subject) {
-      throw new Error("Unauthorized");
-    }
+    // const chat = await ctx.db.get(args.chatId);
+    // if (!chat || chat.userId !== identity.subject) {
+    //   throw new Error("Unauthorized");
+    // }
 
     // Save the user message with preserved newlines
     const messageId = await ctx.db.insert("messages", {

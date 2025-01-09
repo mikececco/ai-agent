@@ -1,50 +1,138 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useConvex, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { ViewHorizontalIcon } from "@radix-ui/react-icons";
-import { generateAIResponse } from "@/app/actions";
 
 export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
-  const convex = useConvex();
   const messages = useQuery(api.messages.list, { chatId });
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [streamedResponse, setStreamedResponse] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const cleanup = () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+    return cleanup;
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamedResponse]);
+
+  // Clear streamed response when a new message appears
+  useEffect(() => {
+    if (messages?.length) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role === "assistant") {
+        setStreamedResponse("");
+      }
+    }
+  }, [messages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedInput = input.trim();
     if (!trimmedInput || isLoading) return;
 
+    // Cancel any ongoing streams
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
     setInput("");
     setStreamedResponse("");
+    setIsLoading(true);
 
     try {
-      // Send user message first
-      await convex.mutation(api.messages.send, {
-        chatId,
-        content: trimmedInput,
+      // Create a new AbortController for this stream
+      abortControllerRef.current = new AbortController();
+
+      const response = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              lc: 1,
+              type: "constructor",
+              id: ["HumanMessage"],
+              kwargs: {
+                content: trimmedInput,
+              },
+            },
+          ],
+          chatId,
+        }),
+        signal: abortControllerRef.current.signal,
       });
 
-      // Then show loading and generate AI response
-      setIsLoading(true);
-      await generateAIResponse(convex, chatId, trimmedInput, (chunk) => {
-        setStreamedResponse(chunk);
-      });
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) throw new Error("No reader available");
+
+      let fullResponse = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // Decode the stream chunk and split into lines
+          const chunk = decoder.decode(value);
+          console.log("Received chunk:", chunk);
+          // Split by double newlines to handle SSE format
+          const lines = chunk.split("\n\n");
+
+          // Process each SSE message
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (trimmedLine.startsWith("data: ")) {
+              const data = trimmedLine.slice(6);
+              console.log("Processing SSE data:", data);
+              if (data === "[DONE]") continue;
+
+              try {
+                const parsedData = JSON.parse(data);
+                console.log("Parsed SSE data:", parsedData);
+                if (parsedData.type === "token" && parsedData.token) {
+                  fullResponse += parsedData.token;
+                  console.log("Updated response:", fullResponse);
+                  setStreamedResponse(fullResponse);
+                } else if (parsedData.type === "error" && parsedData.error) {
+                  console.error("Stream error:", parsedData.error);
+                  throw new Error(parsedData.error);
+                }
+              } catch (e) {
+                console.error("Error parsing SSE data:", e);
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
     } catch (error) {
       console.error("Error sending message:", error);
     } finally {
       setIsLoading(false);
-      setStreamedResponse("");
+      abortControllerRef.current = null;
     }
   };
 
