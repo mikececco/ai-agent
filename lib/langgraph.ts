@@ -279,12 +279,7 @@ export async function submitQuestion(
     const config = { configurable: { thread_id: chatId } };
 
     console.log("🔒🔒🔒 Config thread_id:", chatId);
-    const stream = await app.stream(
-      { messages: formattedMessages },
-      {
-        configurable: {},
-      }
-    );
+    const stream = await app.stream({ messages: formattedMessages }, config);
     let fullResponse = "";
 
     for await (const chunk of stream) {
