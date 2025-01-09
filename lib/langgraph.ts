@@ -12,7 +12,6 @@ import { MemorySaver, Annotation } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import wxflows from "@wxflows/sdk/langchain";
 import { Serialized } from "@langchain/core/load/serializable";
-import { MessageContentText } from "@langchain/core/messages";
 
 const StateAnnotation = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
@@ -49,6 +48,7 @@ const initialiseModel = (onToken?: (token: string) => void) => {
           console.log("🤖 Starting LLM call");
         },
         handleLLMEnd: async (output) => {
+          console.log("🤖 End LLM call", output);
           const usage = output.llmOutput?.usage;
           if (usage) {
             console.log("📊 Token Usage:", {
@@ -167,45 +167,7 @@ Remember to maintain context across the conversation and refer back to previous 
         ],
       });
 
-      // Get conversation history and add cache control to the last message
-      const conversationHistory = state.messages.map((msg, index) => {
-        // Add cache control to the last message in the conversation
-        if (index === state.messages.length - 1) {
-          console.log("🔒 Setting cache control: Last Message in Conversation");
-          const content =
-            typeof msg.content === "string"
-              ? msg.content
-              : Array.isArray(msg.content) && msg.content[0]?.type === "text"
-                ? msg.content[0].text
-                : String(msg.content);
-
-          if (msg instanceof AIMessage) {
-            return new AIMessage({
-              content: [
-                {
-                  type: "text",
-                  text: content,
-                  cache_control: { type: "ephemeral" },
-                },
-              ],
-            });
-          }
-          if (msg instanceof HumanMessage) {
-            return new HumanMessage({
-              content: [
-                {
-                  type: "text",
-                  text: content,
-                  cache_control: { type: "ephemeral" },
-                },
-              ],
-            });
-          }
-        }
-        return msg;
-      });
-
-      const messages = [systemMessage, ...conversationHistory];
+      const messages = [systemMessage, ...state.messages];
       const response = await model.invoke(messages);
       return { messages: [response] };
     })
@@ -226,51 +188,68 @@ export async function submitQuestion(
     const checkpointer = new MemorySaver();
     const app = workflow.compile({ checkpointer });
 
-    // Transform messages to maintain conversation context with caching
+    // Transform messages to maintain conversation context
     const formattedMessages = messages.map((msg, index) => {
       if (msg.type === "constructor") {
-        if (msg.id[0] === "HumanMessage") {
-          // Don't cache the current user message
-          if (index === messages.length - 1) {
-            console.log("⚡ Skipping cache for current user message");
+        // Find second-to-last user message
+        let secondToLastUserIndex = -1;
+        let userMessageCount = 0;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].id[0] === "HumanMessage") {
+            userMessageCount++;
+            if (userMessageCount === 2) {
+              secondToLastUserIndex = i;
+              break;
+            }
+          }
+        }
+
+        // Determine if this message should be cached
+        const isSystemMessage = msg.id[0] === "SystemMessage";
+        const isLastMessage = index === messages.length - 1;
+        const isSecondToLastUserMessage = index === secondToLastUserIndex;
+        const shouldCache =
+          isSystemMessage || isLastMessage || isSecondToLastUserMessage;
+
+        if (shouldCache) {
+          console.log(
+            `🔒 Caching message: ${
+              isSystemMessage
+                ? "System"
+                : isLastMessage
+                  ? "Last"
+                  : "Second-to-last User"
+            } at index ${index}`
+          );
+
+          const content = [
+            {
+              type: "text",
+              text: msg.kwargs.content,
+              cache_control: { type: "ephemeral" },
+            },
+          ];
+
+          if (msg.id[0] === "HumanMessage") {
+            return new HumanMessage({ content });
+          }
+          if (msg.id[0] === "AIMessage") {
+            return new AIMessage({ content });
+          }
+          if (msg.id[0] === "SystemMessage") {
+            return new SystemMessage({ content });
+          }
+        } else {
+          // No caching for other messages
+          if (msg.id[0] === "HumanMessage") {
             return new HumanMessage(msg.kwargs.content);
           }
-          // Cache previous user messages for context
-          console.log("🔒 Setting cache control: Previous User Message");
-          return new HumanMessage({
-            content: [
-              {
-                type: "text",
-                text: msg.kwargs.content,
-                cache_control: { type: "ephemeral" },
-              },
-            ],
-          });
-        }
-        if (msg.id[0] === "AIMessage") {
-          // Cache all previous assistant messages for context
-          console.log("🔒 Setting cache control: Assistant Message");
-          return new AIMessage({
-            content: [
-              {
-                type: "text",
-                text: msg.kwargs.content,
-                cache_control: { type: "ephemeral" },
-              },
-            ],
-          });
-        }
-        if (msg.id[0] === "SystemMessage") {
-          console.log("🔒 Setting cache control: System Message");
-          return new SystemMessage({
-            content: [
-              {
-                type: "text",
-                text: msg.kwargs.content,
-                cache_control: { type: "ephemeral" },
-              },
-            ],
-          });
+          if (msg.id[0] === "AIMessage") {
+            return new AIMessage(msg.kwargs.content);
+          }
+          if (msg.id[0] === "SystemMessage") {
+            return new SystemMessage(msg.kwargs.content);
+          }
         }
       }
       throw new Error("Invalid message format");
@@ -280,23 +259,15 @@ export async function submitQuestion(
 
     console.log("🔒🔒🔒 Config thread_id:", chatId);
     const stream = await app.stream({ messages: formattedMessages }, config);
+
     let fullResponse = "";
 
     for await (const chunk of stream) {
-      const lastMessage = chunk.messages[
-        chunk.messages.length - 1
-      ] as AIMessage;
-      if (lastMessage.content) {
-        if (typeof lastMessage.content === "string") {
-          fullResponse = lastMessage.content;
-        } else {
-          fullResponse = lastMessage.content
-            .filter(
-              (content): content is MessageContentText =>
-                content.type === "text" && "text" in content
-            )
-            .map((content) => content.text)
-            .join("\n");
+      console.log("CHUNK", chunk);
+      if (chunk.content) {
+        fullResponse += chunk.content;
+        if (onToken) {
+          await onToken(chunk.content);
         }
       }
     }

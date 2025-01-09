@@ -45,6 +45,14 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
         },
         body: JSON.stringify({
           messages: [
+            ...(messages?.map((msg) => ({
+              lc: 1,
+              type: "constructor",
+              id: [msg.role === "user" ? "HumanMessage" : "AIMessage"],
+              kwargs: {
+                content: msg.content.replace(/\\n/g, "\n"),
+              },
+            })) || []),
             {
               lc: 1,
               type: "constructor",
