@@ -31,64 +31,72 @@ const tools = await toolClient.lcTools;
 const toolNode = new ToolNode(tools);
 
 // Connect to the LLM provider with better tool instructions
-const model = new ChatAnthropic({
-  modelName: "claude-3-5-sonnet-20241022",
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-  temperature: 0.7,
-  maxTokens: 4096,
-  streaming: true,
-  clientOptions: {
-    defaultHeaders: {
-      "anthropic-beta": "prompt-caching-2024-07-31",
-    },
-  },
-  callbacks: [
-    {
-      handleLLMStart: async () => {
-        console.log("🤖 Starting LLM call");
+const initialiseModel = (onToken?: (token: string) => void) => {
+  const model = new ChatAnthropic({
+    modelName: "claude-3-5-sonnet-20241022",
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+    temperature: 0.7,
+    maxTokens: 4096,
+    streaming: true,
+    clientOptions: {
+      defaultHeaders: {
+        "anthropic-beta": "prompt-caching-2024-07-31",
       },
-      handleLLMEnd: async (output) => {
-        const usage = output.llmOutput?.usage;
-        if (usage) {
-          console.log("📊 Token Usage:", {
-            input_tokens: usage.input_tokens,
-            output_tokens: usage.output_tokens,
-            total_tokens: usage.input_tokens + usage.output_tokens,
-            cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
-            cache_read_input_tokens: usage.cache_read_input_tokens || 0,
+    },
+    callbacks: [
+      {
+        handleLLMStart: async () => {
+          console.log("🤖 Starting LLM call");
+        },
+        handleLLMEnd: async (output) => {
+          const usage = output.llmOutput?.usage;
+          if (usage) {
+            console.log("📊 Token Usage:", {
+              input_tokens: usage.input_tokens,
+              output_tokens: usage.output_tokens,
+              total_tokens: usage.input_tokens + usage.output_tokens,
+              cache_creation_input_tokens:
+                usage.cache_creation_input_tokens || 0,
+              cache_read_input_tokens: usage.cache_read_input_tokens || 0,
+            });
+          }
+        },
+        handleLLMNewToken: async (token: string) => {
+          console.log("🔤 New token:", token);
+          if (onToken) {
+            await onToken(token);
+          }
+        },
+        handleToolStart: async (
+          tool: Serialized,
+          input: string,
+          runId: string
+        ) => {
+          console.log("🛠️ Tool Start:", {
+            tool: typeof tool === "string" ? tool : tool.id[0],
+            input: typeof input === "string" ? JSON.parse(input) : input,
+            runId,
           });
-        }
+        },
+        handleToolEnd: async (output: string, runId: string) => {
+          console.log("🛠️ Tool End:", {
+            output: typeof output === "string" ? JSON.parse(output) : output,
+            runId,
+          });
+        },
+        handleToolError: async (error: Error, runId: string) => {
+          console.error("🛠️ Tool Error:", {
+            message: error.message,
+            stack: error.stack,
+            runId,
+          });
+        },
       },
-      handleLLMNewToken: async (token: string) => {
-        console.log("🔤 New token:", token);
-      },
-      handleToolStart: async (
-        tool: Serialized,
-        input: string,
-        runId: string
-      ) => {
-        console.log("🛠️ Tool Start:", {
-          tool: typeof tool === "string" ? tool : tool.id[0],
-          input: typeof input === "string" ? JSON.parse(input) : input,
-          runId,
-        });
-      },
-      handleToolEnd: async (output: string, runId: string) => {
-        console.log("🛠️ Tool End:", {
-          output: typeof output === "string" ? JSON.parse(output) : output,
-          runId,
-        });
-      },
-      handleToolError: async (error: Error, runId: string) => {
-        console.error("🛠️ Tool Error:", {
-          message: error.message,
-          stack: error.stack,
-          runId,
-        });
-      },
-    },
-  ],
-}).bindTools(tools);
+    ],
+  }).bindTools(tools);
+
+  return model;
+};
 
 // Define the function that determines whether to continue or not
 function shouldContinue(state: typeof StateAnnotation.State) {
@@ -119,15 +127,19 @@ function shouldContinue(state: typeof StateAnnotation.State) {
   return "__end__";
 }
 
-// Define the function that calls the model with better tool instructions
-async function callModel(state: typeof StateAnnotation.State) {
-  // System message with cache control
-  console.log("🔒 Setting cache control: System Message");
-  const systemMessage = new SystemMessage({
-    content: [
-      {
-        type: "text",
-        text: `You are an AI assistant that uses tools to help answer questions. You have access to several tools that can help you find information and perform tasks.
+// Define a new graph
+const createWorkflow = (onToken?: (token: string) => void) => {
+  const model = initialiseModel(onToken);
+
+  return new StateGraph(StateAnnotation)
+    .addNode("agent", async (state) => {
+      // System message with cache control
+      console.log("🔒 Setting cache control: System Message");
+      const systemMessage = new SystemMessage({
+        content: [
+          {
+            type: "text",
+            text: `You are an AI assistant that uses tools to help answer questions. You have access to several tools that can help you find information and perform tasks.
 
 When using tools:
 - Only use the tools that are explicitly provided
@@ -150,94 +162,68 @@ Tool-specific instructions:
    - Variables: { "q": "search terms", "maxResults": 5 }
 
 Remember to maintain context across the conversation and refer back to previous messages when relevant.`,
-        cache_control: { type: "ephemeral" },
-      },
-    ],
-  });
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      });
 
-  // Get conversation history and add cache control to the last message
-  const conversationHistory = state.messages.map((msg, index) => {
-    // Add cache control to the last message in the conversation
-    if (index === state.messages.length - 1) {
-      console.log("🔒 Setting cache control: Last Message in Conversation");
-      const content =
-        typeof msg.content === "string"
-          ? msg.content
-          : Array.isArray(msg.content) && msg.content[0]?.type === "text"
-            ? msg.content[0].text
-            : String(msg.content);
+      // Get conversation history and add cache control to the last message
+      const conversationHistory = state.messages.map((msg, index) => {
+        // Add cache control to the last message in the conversation
+        if (index === state.messages.length - 1) {
+          console.log("🔒 Setting cache control: Last Message in Conversation");
+          const content =
+            typeof msg.content === "string"
+              ? msg.content
+              : Array.isArray(msg.content) && msg.content[0]?.type === "text"
+                ? msg.content[0].text
+                : String(msg.content);
 
-      if (msg instanceof AIMessage) {
-        return new AIMessage({
-          content: [
-            {
-              type: "text",
-              text: content,
-              cache_control: { type: "ephemeral" },
-            },
-          ],
-        });
-      }
-      if (msg instanceof HumanMessage) {
-        return new HumanMessage({
-          content: [
-            {
-              type: "text",
-              text: content,
-              cache_control: { type: "ephemeral" },
-            },
-          ],
-        });
-      }
-    }
-    return msg;
-  });
+          if (msg instanceof AIMessage) {
+            return new AIMessage({
+              content: [
+                {
+                  type: "text",
+                  text: content,
+                  cache_control: { type: "ephemeral" },
+                },
+              ],
+            });
+          }
+          if (msg instanceof HumanMessage) {
+            return new HumanMessage({
+              content: [
+                {
+                  type: "text",
+                  text: content,
+                  cache_control: { type: "ephemeral" },
+                },
+              ],
+            });
+          }
+        }
+        return msg;
+      });
 
-  const messages = [systemMessage, ...conversationHistory];
-
-  const response = await model.invoke(messages);
-
-  return { messages: [response] };
-}
-
-// Define a new graph
-const workflow = new StateGraph(StateAnnotation)
-  .addNode("agent", callModel)
-  .addNode("tools", toolNode)
-  .addEdge("__start__", "agent")
-  .addConditionalEdges("agent", shouldContinue)
-  .addEdge("tools", "agent");
-
-// Initialize memory to persist state between graph runs
-const checkpointer = new MemorySaver();
-
-const app = workflow.compile({ checkpointer });
+      const messages = [systemMessage, ...conversationHistory];
+      const response = await model.invoke(messages);
+      return { messages: [response] };
+    })
+    .addNode("tools", toolNode)
+    .addEdge("__start__", "agent")
+    .addConditionalEdges("agent", shouldContinue)
+    .addEdge("tools", "agent");
+};
 
 export async function submitQuestion(
   messages: Array<Serialized>,
-  stream = false,
   onToken?: (token: string) => void
 ): Promise<string | ReadableStream<string>> {
   try {
-    const model = new ChatAnthropic({
-      modelName: "claude-3-sonnet-20240229",
-      anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-      temperature: 0.7,
-      maxTokens: 4096,
-      streaming: stream,
-      callbacks: stream
-        ? [
-            {
-              handleLLMNewToken: async (token: string) => {
-                console.log("🔤 Streaming token:", token);
-                if (onToken) {
-                  await onToken(token);
-                }
-              },
-            },
-          ]
-        : undefined,
-    });
+    // Create workflow with onToken callback
+    const workflow = createWorkflow(onToken);
+    const checkpointer = new MemorySaver();
+    const app = workflow.compile({ checkpointer });
 
     // Transform messages to maintain conversation context with caching
     const formattedMessages = messages.map((msg, index) => {
@@ -289,18 +275,21 @@ export async function submitQuestion(
       throw new Error("Invalid message format");
     });
 
-    const response = await model.invoke(formattedMessages);
+    const response = await app.invoke({ messages: formattedMessages });
+    const lastMessage = response.messages[
+      response.messages.length - 1
+    ] as AIMessage;
 
-    if (!response.content) {
+    if (!lastMessage.content) {
       throw new Error("No response received from Claude");
     }
 
     // Handle both string and structured responses
-    if (typeof response.content === "string") {
-      return response.content;
+    if (typeof lastMessage.content === "string") {
+      return lastMessage.content;
     }
 
-    return response.content
+    return lastMessage.content
       .filter(
         (content): content is MessageContentText =>
           content.type === "text" && "text" in content

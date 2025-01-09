@@ -49,7 +49,7 @@ export async function POST(req: Request) {
         let fullResponse = "";
 
         // Stream AI response
-        await submitQuestion(messages, true, async (token) => {
+        await submitQuestion(messages, async (token) => {
           fullResponse += token;
           await sendSSEMessage(writer, {
             type: "token",
