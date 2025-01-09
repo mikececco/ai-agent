@@ -151,6 +151,10 @@ When using tools:
 - Share the results of tool usage with the user
 - If a tool call fails, explain the error and try again with corrected parameters
 - If prompt is too long, break it down into smaller parts and use the tools to answer each part
+- when you do any tool call or any computation before you return the result, structure it between markers like this:
+  ---START---
+  {query}
+  ---END---
 
 Tool-specific instructions:
 1. youtube_transcript:

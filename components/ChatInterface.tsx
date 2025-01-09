@@ -28,6 +28,22 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
     }
   }, [messages]);
 
+  const formatCommandOutput = (text: string) => {
+    const regex = /---START---([\s\S]*?)---END---/g;
+    return text.replace(regex, (match, content) => {
+      return `<div class="bg-[#1e1e1e] text-white font-mono p-2 rounded-md my-2 overflow-x-auto whitespace-normal">
+          <div class="flex items-center gap-1.5 border-b border-gray-700 pb-1">
+            <span class="text-red-500">●</span>
+            <span class="text-yellow-500">●</span>
+            <span class="text-green-500">●</span>
+            <span class="text-gray-400 ml-1 text-sm">~/Executing...</span>
+          </div>
+          <div class="text-gray-400 mt-1">$ query</div>
+          <pre class="text-green-400 mt-0.5">${content.trim()}</pre>
+        </div>`;
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedInput = input.trim();
@@ -142,7 +158,16 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
               }`}
             >
               <div className="whitespace-pre-wrap">
-                {message.content.replace(/\\n/g, "\n")}
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html:
+                      message.role === "assistant"
+                        ? formatCommandOutput(
+                            message.content.replace(/\\n/g, "\n")
+                          )
+                        : message.content.replace(/\\n/g, "\n"),
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -151,7 +176,13 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
           <div className="flex justify-start">
             <div className="max-w-[80%] rounded-lg p-3 bg-gray-200 text-black">
               <div className="whitespace-pre-wrap">
-                {streamedResponse.replace(/\\n/g, "\n")}
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html: formatCommandOutput(
+                      streamedResponse.replace(/\\n/g, "\n")
+                    ),
+                  }}
+                />
               </div>
             </div>
           </div>
