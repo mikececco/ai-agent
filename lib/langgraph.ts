@@ -217,6 +217,7 @@ Remember to maintain context across the conversation and refer back to previous 
 
 export async function submitQuestion(
   messages: Array<Serialized>,
+  chatId: string,
   onToken?: (token: string) => void
 ): Promise<string | ReadableStream<string>> {
   try {
@@ -275,7 +276,9 @@ export async function submitQuestion(
       throw new Error("Invalid message format");
     });
 
-    const response = await app.invoke({ messages: formattedMessages });
+    const config = { configurable: { thread_id: chatId } };
+
+    const response = await app.invoke({ messages: formattedMessages }, config);
     const lastMessage = response.messages[
       response.messages.length - 1
     ] as AIMessage;
