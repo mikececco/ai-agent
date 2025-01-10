@@ -5,6 +5,7 @@ import {
   BaseMessage,
   HumanMessage,
   SystemMessage,
+  trimMessages,
 } from "@langchain/core/messages";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { MessagesAnnotation, StateGraph } from "@langchain/langgraph";
@@ -16,6 +17,16 @@ import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
+
+// Trim the messages to manage conversation history
+const trimmer = trimMessages({
+  maxTokens: 10,
+  strategy: "last",
+  tokenCounter: (msgs) => msgs.length,
+  includeSystem: true,
+  allowPartial: false,
+  startOn: "human",
+});
 
 // Connect to wxflows
 const toolClient = new wxflows({
@@ -160,8 +171,11 @@ Remember to maintain context across the conversation and refer back to previous 
         new MessagesPlaceholder("messages"),
       ]);
 
+      // Trim the messages to manage conversation history
+      const trimmedMessages = await trimmer.invoke(state.messages);
+
       // Format the prompt with the current messages
-      const prompt = await promptTemplate.invoke({ messages: state.messages });
+      const prompt = await promptTemplate.invoke({ messages: trimmedMessages });
       console.log("✅ Prompt:", prompt);
 
       // Get response from the model
@@ -222,8 +236,12 @@ export async function submitQuestion(
 
     // Create workflow with chatId and onToken callback
     const workflow = createWorkflow(chatId, onToken);
+
+    // Create a checkpoint to save the state of the conversation
     const checkpointer = new MemorySaver();
     const app = workflow.compile({ checkpointer });
+
+    // The config is used to set the thread_id for the conversation
     const config = { configurable: { thread_id: chatId } };
 
     console.log("🔒🔒🔒 Config thread_id:", chatId);
