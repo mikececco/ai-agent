@@ -6,6 +6,8 @@ import { api } from "@/convex/_generated/api";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { ViewHorizontalIcon } from "@radix-ui/react-icons";
+import { ChatRequestBody, StreamMessageType } from "@/lib/types";
+import { SSEParser } from "@/lib/utils";
 
 export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
   const messages = useQuery(api.messages.list, { chatId });
@@ -96,20 +98,22 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
     setIsLoading(true);
 
     try {
+      const requestBody: ChatRequestBody = {
+        messages:
+          messages?.map((msg) => ({
+            role: msg.role,
+            content: msg.content.replace(/\\n/g, "\n"),
+          })) || [],
+        newMessage: trimmedInput,
+        chatId,
+      };
+
       const response = await fetch("/api/chat/stream", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          messages:
-            messages?.map((msg) => ({
-              role: msg.role,
-              content: msg.content.replace(/\\n/g, "\n"),
-            })) || [],
-          newMessage: trimmedInput,
-          chatId,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -119,6 +123,7 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
+      const parser = new SSEParser();
 
       if (!reader) throw new Error("No reader available");
 
@@ -129,34 +134,24 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          // Decode the stream chunk and split into lines
+          // Decode the chunk and parse SSE messages
           const chunk = decoder.decode(value);
-          console.log("Received chunk:", chunk);
-          // Split by double newlines to handle SSE format
-          const lines = chunk.split("\n\n");
+          const messages = parser.parse(chunk);
 
-          // Process each SSE message
-          for (const line of lines) {
-            const trimmedLine = line.trim();
-            if (trimmedLine.startsWith("data: ")) {
-              const data = trimmedLine.slice(6);
-              console.log("Processing SSE data:", data);
-              if (data === "[DONE]") continue;
-
-              try {
-                const parsedData = JSON.parse(data);
-                console.log("Parsed SSE data:", parsedData);
-                if (parsedData.type === "token" && parsedData.token) {
-                  fullResponse += parsedData.token;
-                  console.log("Updated response:", fullResponse);
-                  setStreamedResponse(fullResponse);
-                } else if (parsedData.type === "error" && parsedData.error) {
-                  console.error("Stream error:", parsedData.error);
-                  throw new Error(parsedData.error);
-                }
-              } catch (e) {
-                console.error("Error parsing SSE data:", e);
-              }
+          // Process each parsed message
+          for (const message of messages) {
+            if (
+              message.type === StreamMessageType.Token &&
+              "token" in message
+            ) {
+              fullResponse += message.token;
+              setStreamedResponse(fullResponse);
+            } else if (
+              message.type === StreamMessageType.Error &&
+              "error" in message
+            ) {
+              console.error("Stream error:", message.error);
+              throw new Error(message.error);
             }
           }
         }

@@ -3,22 +3,27 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { Id } from "@/convex/_generated/dataModel";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
+import {
+  ChatRequestBody,
+  StreamMessage,
+  StreamMessageType,
+  SSE_DATA_PREFIX,
+  SSE_LINE_DELIMITER,
+} from "@/lib/types";
 
 export const runtime = "edge";
 
 function sendSSEMessage(
   writer: WritableStreamDefaultWriter<Uint8Array>,
-  data: unknown
+  data: StreamMessage
 ) {
   const encoder = new TextEncoder();
-  return writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+  return writer.write(
+    encoder.encode(
+      `${SSE_DATA_PREFIX}${JSON.stringify(data)}${SSE_LINE_DELIMITER}`
+    )
+  );
 }
 
 export async function POST(req: Request) {
@@ -28,16 +33,8 @@ export async function POST(req: Request) {
       return new Response("Unauthorized", { status: 401 });
     }
 
-    const {
-      messages,
-      newMessage,
-      chatId,
-    }: {
-      messages: Message[];
-      newMessage: string;
-      chatId: Id<"chats">;
-    } = await req.json();
-
+    const { messages, newMessage, chatId } =
+      (await req.json()) as ChatRequestBody;
     const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
     // Create stream with larger queue strategy for better performance
@@ -57,7 +54,7 @@ export async function POST(req: Request) {
     (async () => {
       try {
         // Send initial connection established message
-        await sendSSEMessage(writer, { type: "connected" });
+        await sendSSEMessage(writer, { type: StreamMessageType.Connected });
 
         // Send user message to Convex
         await convex.mutation(api.messages.send, {
@@ -81,7 +78,7 @@ export async function POST(req: Request) {
         await submitQuestion(langChainMessages, chatId, async (token) => {
           fullResponse += token;
           await sendSSEMessage(writer, {
-            type: "token",
+            type: StreamMessageType.Token,
             token,
           });
         });
@@ -94,11 +91,11 @@ export async function POST(req: Request) {
         });
 
         // Send completion message
-        await sendSSEMessage(writer, { type: "done" });
+        await sendSSEMessage(writer, { type: StreamMessageType.Done });
       } catch (error) {
         console.error("Error in stream:", error);
         await sendSSEMessage(writer, {
-          type: "error",
+          type: StreamMessageType.Error,
           error: error instanceof Error ? error.message : "Unknown error",
         });
       } finally {
@@ -114,7 +111,7 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("Error in chat API:", error);
     return NextResponse.json(
-      { error: "Failed to process chat request" },
+      { error: "Failed to process chat request" } as const,
       { status: 500 }
     );
   }
