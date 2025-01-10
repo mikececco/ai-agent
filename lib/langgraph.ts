@@ -3,7 +3,7 @@
 import {
   AIMessage,
   SystemMessage,
-  HumanMessage,
+  BaseMessage,
 } from "@langchain/core/messages";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { MessagesAnnotation, StateGraph } from "@langchain/langgraph";
@@ -176,7 +176,7 @@ Remember to maintain context across the conversation and refer back to previous 
 };
 
 export async function submitQuestion(
-  messages: Array<Serialized>,
+  messages: BaseMessage[],
   chatId: string,
   onToken?: (token: string) => void
 ): Promise<string | ReadableStream<string>> {
@@ -185,78 +185,11 @@ export async function submitQuestion(
     const workflow = createWorkflow(chatId, onToken);
     const checkpointer = new MemorySaver();
     const app = workflow.compile({ checkpointer });
-
-    // Transform messages to maintain conversation context
-    const formattedMessages = messages.map((msg, index) => {
-      if (msg.type === "constructor") {
-        // Find second-to-last user message
-        let secondToLastUserIndex = -1;
-        let userMessageCount = 0;
-        for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].id[0] === "HumanMessage") {
-            userMessageCount++;
-            if (userMessageCount === 2) {
-              secondToLastUserIndex = i;
-              break;
-            }
-          }
-        }
-
-        // Determine if this message should be cached
-        const isSystemMessage = msg.id[0] === "SystemMessage";
-        const isLastMessage = index === messages.length - 1;
-        const isSecondToLastUserMessage = index === secondToLastUserIndex;
-        const shouldCache =
-          isSystemMessage || isLastMessage || isSecondToLastUserMessage;
-
-        if (shouldCache) {
-          console.log(
-            `🔒 Caching message: ${
-              isSystemMessage
-                ? "System"
-                : isLastMessage
-                  ? "Last"
-                  : "Second-to-last User"
-            } at index ${index}`
-          );
-
-          const content = [
-            {
-              type: "text",
-              text: msg.kwargs.content,
-              cache_control: { type: "ephemeral" },
-            },
-          ];
-
-          if (msg.id[0] === "HumanMessage") {
-            return new HumanMessage({ content });
-          }
-          if (msg.id[0] === "AIMessage") {
-            return new AIMessage({ content });
-          }
-          if (msg.id[0] === "SystemMessage") {
-            return new SystemMessage({ content });
-          }
-        } else {
-          // No caching for other messages
-          if (msg.id[0] === "HumanMessage") {
-            return new HumanMessage(msg.kwargs.content);
-          }
-          if (msg.id[0] === "AIMessage") {
-            return new AIMessage(msg.kwargs.content);
-          }
-          if (msg.id[0] === "SystemMessage") {
-            return new SystemMessage(msg.kwargs.content);
-          }
-        }
-      }
-      throw new Error("Invalid message format");
-    });
-
     const config = { configurable: { thread_id: chatId } };
 
     console.log("🔒🔒🔒 Config thread_id:", chatId);
-    await app.invoke({ messages: formattedMessages }, config);
+    console.log("🔒🔒🔒 Messages:", messages);
+    await app.invoke({ messages }, config);
 
     return "done";
   } catch (error) {

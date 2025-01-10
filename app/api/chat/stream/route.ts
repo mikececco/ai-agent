@@ -3,10 +3,20 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { Id } from "@/convex/_generated/dataModel";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
 
 export const runtime = "edge";
 
-function sendSSEMessage(writer: WritableStreamDefaultWriter<any>, data: any) {
+function sendSSEMessage(
+  writer: WritableStreamDefaultWriter<Uint8Array>,
+  data: unknown
+) {
   const encoder = new TextEncoder();
   return writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
 }
@@ -18,7 +28,16 @@ export async function POST(req: Request) {
       return new Response("Unauthorized", { status: 401 });
     }
 
-    const { messages, chatId } = await req.json();
+    const {
+      messages,
+      newMessage,
+      chatId,
+    }: {
+      messages: Message[];
+      newMessage: string;
+      chatId: Id<"chats">;
+    } = await req.json();
+
     const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
     // Create stream with larger queue strategy for better performance
@@ -43,13 +62,23 @@ export async function POST(req: Request) {
         // Send user message to Convex
         await convex.mutation(api.messages.send, {
           chatId,
-          content: messages[messages.length - 1].kwargs.content,
+          content: newMessage,
         });
+
+        // Convert messages to LangChain format
+        const langChainMessages = [
+          ...messages.map((msg) =>
+            msg.role === "user"
+              ? new HumanMessage(msg.content)
+              : new AIMessage(msg.content)
+          ),
+          new HumanMessage(newMessage),
+        ];
 
         let fullResponse = "";
 
         // Stream AI response
-        await submitQuestion(messages, chatId, async (token) => {
+        await submitQuestion(langChainMessages, chatId, async (token) => {
           fullResponse += token;
           await sendSSEMessage(writer, {
             type: "token",
