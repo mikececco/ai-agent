@@ -2,9 +2,9 @@
 
 import {
   AIMessage,
-  SystemMessage,
   BaseMessage,
   HumanMessage,
+  SystemMessage,
 } from "@langchain/core/messages";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { MessagesAnnotation, StateGraph } from "@langchain/langgraph";
@@ -12,6 +12,10 @@ import { MemorySaver } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import wxflows from "@wxflows/sdk/langchain";
 import { Serialized } from "@langchain/core/load/serializable";
+import {
+  ChatPromptTemplate,
+  MessagesPlaceholder,
+} from "@langchain/core/prompts";
 
 // Connect to wxflows
 const toolClient = new wxflows({
@@ -127,13 +131,8 @@ const createWorkflow = (chatId: string, onToken?: (token: string) => void) => {
 
   return new StateGraph(MessagesAnnotation)
     .addNode("agent", async (state) => {
-      // System message with cache control
-      console.log("🔒 Setting cache control: System Message");
-      const systemMessage = new SystemMessage({
-        content: [
-          {
-            type: "text",
-            text: `You are an AI assistant that uses tools to help answer questions. You have access to several tools that can help you find information and perform tasks.
+      // Create the system message content
+      const systemContent = `You are an AI assistant that uses tools to help answer questions. You have access to several tools that can help you find information and perform tasks.
 
 When using tools:
 - Only use the tools that are explicitly provided
@@ -147,27 +146,26 @@ When using tools:
 - If prompt is too long, break it down into smaller parts and use the tools to answer each part
 - when you do any tool call or any computation before you return the result, structure it between markers like this:
   ---START---
-  {query}
+  query
   ---END---
 
-Tool-specific instructions:
-1. youtube_transcript:
-   - Query: { transcript(videoUrl: $videoUrl, langCode: $langCode) { title captions { text start dur } } }
-   - Variables: { "videoUrl": "https://www.youtube.com/watch?v=VIDEO_ID", "langCode": "en" }
 
-2. google_books:
-   - For search: { books(q: $q, maxResults: $maxResults) { volumeId title authors } }
-   - Variables: { "q": "search terms", "maxResults": 5 }
+Remember to maintain context across the conversation and refer back to previous messages when relevant.`;
 
-Remember to maintain context across the conversation and refer back to previous messages when relevant.`,
-            cache_control: { type: "ephemeral" },
-          },
-        ],
-      });
+      // Create the prompt template with system message and messages placeholder
+      const promptTemplate = ChatPromptTemplate.fromMessages([
+        new SystemMessage(systemContent, {
+          cache_control: { type: "ephemeral" },
+        }),
+        new MessagesPlaceholder("messages"),
+      ]);
 
-      const messages = [systemMessage, ...state.messages];
+      // Format the prompt with the current messages
+      const prompt = await promptTemplate.invoke({ messages: state.messages });
+      console.log("✅ Prompt:", prompt);
 
-      const response = await model.invoke(messages);
+      // Get response from the model
+      const response = await model.invoke(prompt);
       return { messages: [response] };
     })
     .addNode("tools", toolNode)
@@ -194,6 +192,7 @@ function addCachingHeaders(messages: BaseMessage[]): BaseMessage[] {
   };
 
   // Cache the last message
+  console.log("🤑🤑🤑 Caching last message");
   addCache(cachedMessages.at(-1)!);
 
   // Find and cache the second-to-last human message
@@ -202,6 +201,7 @@ function addCachingHeaders(messages: BaseMessage[]): BaseMessage[] {
     if (cachedMessages[i] instanceof HumanMessage) {
       humanCount++;
       if (humanCount === 2) {
+        console.log("🤑🤑🤑 Caching second-to-last human message");
         addCache(cachedMessages[i]);
         break;
       }
