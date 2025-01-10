@@ -4,6 +4,7 @@ import {
   AIMessage,
   SystemMessage,
   BaseMessage,
+  HumanMessage,
 } from "@langchain/core/messages";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { MessagesAnnotation, StateGraph } from "@langchain/langgraph";
@@ -175,12 +176,50 @@ Remember to maintain context across the conversation and refer back to previous 
     .addEdge("tools", "agent");
 };
 
+function addCachingHeaders(messages: BaseMessage[]): BaseMessage[] {
+  if (!messages.length) return messages;
+
+  // Create a copy of messages to avoid mutating the original
+  const cachedMessages = [...messages];
+
+  // Helper to add cache control
+  const addCache = (message: BaseMessage) => {
+    message.content = [
+      {
+        type: "text",
+        text: message.content as string,
+        cache_control: { type: "ephemeral" },
+      },
+    ];
+  };
+
+  // Cache the last message
+  addCache(cachedMessages.at(-1)!);
+
+  // Find and cache the second-to-last human message
+  let humanCount = 0;
+  for (let i = cachedMessages.length - 1; i >= 0; i--) {
+    if (cachedMessages[i] instanceof HumanMessage) {
+      humanCount++;
+      if (humanCount === 2) {
+        addCache(cachedMessages[i]);
+        break;
+      }
+    }
+  }
+
+  return cachedMessages;
+}
+
 export async function submitQuestion(
   messages: BaseMessage[],
   chatId: string,
   onToken?: (token: string) => void
 ): Promise<string | ReadableStream<string>> {
   try {
+    // Add caching headers to messages
+    const cachedMessages = addCachingHeaders(messages);
+
     // Create workflow with chatId and onToken callback
     const workflow = createWorkflow(chatId, onToken);
     const checkpointer = new MemorySaver();
@@ -188,8 +227,8 @@ export async function submitQuestion(
     const config = { configurable: { thread_id: chatId } };
 
     console.log("🔒🔒🔒 Config thread_id:", chatId);
-    console.log("🔒🔒🔒 Messages:", messages);
-    await app.invoke({ messages }, config);
+    console.log("🔒🔒🔒 Messages:", cachedMessages);
+    await app.invoke({ messages: cachedMessages }, config);
 
     return "done";
   } catch (error) {
