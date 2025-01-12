@@ -1,9 +1,9 @@
 import { submitQuestion } from "@/lib/langgraph";
-import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { getConvexClient } from "@/lib/convex";
 import {
   ChatRequestBody,
   StreamMessage,
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
 
     const { messages, newMessage, chatId } =
       (await req.json()) as ChatRequestBody;
-    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+    const convex = getConvexClient();
 
     // Create stream with larger queue strategy for better performance
     const stream = new TransformStream({}, { highWaterMark: 1024 });

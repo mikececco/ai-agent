@@ -1,16 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { ChatRequestBody, StreamMessageType } from "@/lib/types";
 import { SSEParser } from "@/lib/utils";
 import WelcomeMessage from "@/components/WelcomeMessage";
 
-export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
-  const messages = useQuery(api.messages.list, { chatId });
+interface ChatInterfaceProps {
+  chatId: Id<"chats">;
+  initialMessages: Doc<"messages">[];
+}
+
+export default function ChatInterface({
+  chatId,
+  initialMessages,
+}: ChatInterfaceProps) {
+  const [messages, setMessages] = useState<Doc<"messages">[]>(initialMessages);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [streamedResponse, setStreamedResponse] = useState("");
@@ -19,16 +25,6 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamedResponse]);
-
-  // Clear streamed response when a new message appears
-  useEffect(() => {
-    if (messages?.length) {
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage.role === "assistant") {
-        setStreamedResponse("");
-      }
-    }
-  }, [messages]);
 
   const formatTerminalOutput = (text: string) => {
     const regex = /---START---([\s\S]*?)---END---/g;
@@ -63,17 +59,28 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
     const trimmedInput = input.trim();
     if (!trimmedInput || isLoading) return;
 
+    // Clear input and start loading
     setInput("");
     setStreamedResponse("");
     setIsLoading(true);
 
+    // Add optimistic user message
+    const optimisticUserMessage: Doc<"messages"> = {
+      _id: `temp_${Date.now()}`,
+      chatId,
+      content: trimmedInput,
+      role: "user",
+      createdAt: Date.now(),
+    } as Doc<"messages">;
+
+    setMessages((prev) => [...prev, optimisticUserMessage]);
+
     try {
       const requestBody: ChatRequestBody = {
-        messages:
-          messages?.map((msg) => ({
-            role: msg.role,
-            content: msg.content.replace(/\\n/g, "\n"),
-          })) || [],
+        messages: messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content.replace(/\\n/g, "\n"),
+        })),
         newMessage: trimmedInput,
         chatId,
       };
@@ -130,6 +137,10 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
       }
     } catch (error) {
       console.error("Error sending message:", error);
+      // Remove optimistic message on error
+      setMessages((prev) =>
+        prev.filter((msg) => msg._id !== optimisticUserMessage._id)
+      );
     } finally {
       setIsLoading(false);
     }
