@@ -1,5 +1,3 @@
-"use server";
-
 import {
   AIMessage,
   BaseMessage,
@@ -153,15 +151,26 @@ When using tools:
 - Structure GraphQL queries to request all available fields shown in the schema
 - Explain what you're doing when using tools
 - Share the results of tool usage with the user
+- Always share the output from the tool call with the user
 - If a tool call fails, explain the error and try again with corrected parameters
+- never create false information
 - If prompt is too long, break it down into smaller parts and use the tools to answer each part
 - when you do any tool call or any computation before you return the result, structure it between markers like this:
   ---START---
   query
   ---END---
 
+Tool-specific instructions:
+1. youtube_transcript:
+   - Query: { transcript(videoUrl: $videoUrl, langCode: $langCode) { title captions { text start dur } } }
+   - Variables: { "videoUrl": "https://www.youtube.com/watch?v=VIDEO_ID", "langCode": "en" }
 
-Remember to maintain context across the conversation and refer back to previous messages when relevant.`;
+2. google_books:
+   - For search: { books(q: $q, maxResults: $maxResults) { volumeId title authors } }
+   - Variables: { "q": "search terms", "maxResults": 5 }
+
+   refer to previous messages for context and use them to accurately answer the question
+`;
 
       // Create the prompt template with system message and messages placeholder
       const promptTemplate = ChatPromptTemplate.fromMessages([
@@ -246,9 +255,11 @@ export async function submitQuestion(
 
     console.log("🔒🔒🔒 Config thread_id:", chatId);
     console.log("🔒🔒🔒 Messages:", cachedMessages);
-    await app.invoke({ messages: cachedMessages }, config);
-
-    return "done";
+    const stream = await app.stream({ messages: cachedMessages }, config);
+    // for await (const event of stream) {
+    //   console.log("✅✅✅ Event:", event);
+    // }
+    return stream;
   } catch (error) {
     console.error("Error in submitQuestion:", error);
 

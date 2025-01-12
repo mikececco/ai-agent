@@ -30,34 +30,10 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
     }
   }, [messages]);
 
-  const formatCommandOutput = (text: string) => {
+  const formatTerminalOutput = (text: string) => {
     const regex = /---START---([\s\S]*?)---END---/g;
-    return text.replace(regex, (match, content) => {
-      return `<div class="bg-[#1e1e1e] text-white font-mono p-2 rounded-md my-2 overflow-x-auto whitespace-normal">
-          <div class="flex items-center gap-1.5 border-b border-gray-700 pb-1">
-            <span class="text-red-500">●</span>
-            <span class="text-yellow-500">●</span>
-            <span class="text-green-500">●</span>
-            <span class="text-gray-400 ml-1 text-sm">~/Executing...</span>
-          </div>
-          <div class="text-gray-400 mt-1">$ query</div>
-          <pre class="text-green-400 mt-0.5">${content.trim()}</pre>
-        </div>`;
-    });
-  };
-
-  const formatStreamingCommandOutput = (text: string, isStreaming: boolean) => {
-    if (!isStreaming) {
-      return formatCommandOutput(text);
-    }
-
-    // If we have a complete command block
-    if (text.includes("---START---") && text.includes("---END---")) {
-      const beforeStart = text.split("---START---")[0];
-      const middle = text.split("---START---")[1].split("---END---")[0];
-      const afterEnd = text.split("---END---")[1];
-
-      return `${beforeStart}<div class="bg-[#1e1e1e] text-white font-mono p-2 rounded-md my-2 overflow-x-auto whitespace-normal">
+    const terminalTemplate = (content: string) => `
+      <div class="bg-[#1e1e1e] text-white font-mono p-2 rounded-md my-2 overflow-x-auto whitespace-normal max-w-[600px]">
         <div class="flex items-center gap-1.5 border-b border-gray-700 pb-1">
           <span class="text-red-500">●</span>
           <span class="text-yellow-500">●</span>
@@ -65,27 +41,21 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
           <span class="text-gray-400 ml-1 text-sm">~/Executing...</span>
         </div>
         <div class="text-gray-400 mt-1">$ query</div>
-        <pre class="text-green-400 mt-0.5">${middle.trim()}</pre>
-      </div>${afterEnd}`;
+        <pre class="text-green-400 mt-0.5 whitespace-pre-wrap overflow-x-auto">${content.trim()}</pre>
+      </div>
+    `;
+
+    // If no command block markers are present, return as is
+    if (!text.includes("---START---")) return text;
+
+    // Handle complete command blocks
+    if (text.includes("---END---")) {
+      return text.replace(regex, (_, content) => terminalTemplate(content));
     }
 
-    // If we're starting a command block
-    if (text.includes("---START---")) {
-      const [beforeStart, content] = text.split("---START---");
-      return `${beforeStart}<div class="bg-[#1e1e1e] text-white font-mono p-2 rounded-md my-2 overflow-x-auto whitespace-normal">
-        <div class="flex items-center gap-1.5 border-b border-gray-700 pb-1">
-          <span class="text-red-500">●</span>
-          <span class="text-yellow-500">●</span>
-          <span class="text-green-500">●</span>
-          <span class="text-gray-400 ml-1 text-sm">~/Executing...</span>
-        </div>
-        <div class="text-gray-400 mt-1">$ query</div>
-        <pre class="text-green-400 mt-0.5">${content}</pre>
-      </div>`;
-    }
-
-    // If we're in the middle of a command block, just return the text as is
-    return text;
+    // Handle streaming command block
+    const [beforeStart, content] = text.split("---START---");
+    return beforeStart + terminalTemplate(content);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -167,7 +137,7 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 max-w-4xl mx-auto w-full">
         {messages?.map((message: Doc<"messages">) => (
           <div
             key={message._id}
@@ -176,20 +146,19 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
             }`}
           >
             <div
-              className={`max-w-[80%] rounded-lg p-3 ${
+              className={`rounded-2xl px-4 py-2 max-w-[85%] md:max-w-[75%] shadow-sm ${
                 message.role === "user"
-                  ? "bg-blue-500 text-white"
-                  : "bg-gray-200 text-black"
+                  ? "bg-blue-500 text-white rounded-br-none"
+                  : "bg-gray-100 text-black rounded-bl-none"
               }`}
             >
-              <div className="whitespace-pre-wrap">
+              <div className="whitespace-pre-wrap text-[15px]">
                 <div
                   dangerouslySetInnerHTML={{
                     __html:
                       message.role === "assistant"
-                        ? formatStreamingCommandOutput(
-                            message.content.replace(/\\n/g, "\n"),
-                            false
+                        ? formatTerminalOutput(
+                            message.content.replace(/\\n/g, "\n")
                           )
                         : message.content.replace(/\\n/g, "\n"),
                   }}
@@ -200,13 +169,12 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
         ))}
         {streamedResponse && (
           <div className="flex justify-start">
-            <div className="max-w-[80%] rounded-lg p-3 bg-gray-200 text-black">
-              <div className="whitespace-pre-wrap">
+            <div className="rounded-2xl px-4 py-2 max-w-[85%] md:max-w-[75%] bg-gray-100 text-black rounded-bl-none shadow-sm">
+              <div className="whitespace-pre-wrap text-[15px]">
                 <div
                   dangerouslySetInnerHTML={{
-                    __html: formatStreamingCommandOutput(
-                      streamedResponse.replace(/\\n/g, "\n"),
-                      true
+                    __html: formatTerminalOutput(
+                      streamedResponse.replace(/\\n/g, "\n")
                     ),
                   }}
                 />
@@ -216,12 +184,11 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
         )}
         {isLoading && !streamedResponse && (
           <div className="flex justify-start">
-            <div className="max-w-[80%] rounded-lg p-3 bg-gray-200 text-black">
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-black animate-bounce [animation-delay:-0.3s]" />
-                <div className="h-2 w-2 rounded-full bg-black animate-bounce [animation-delay:-0.15s]" />
-                <div className="h-2 w-2 rounded-full bg-black animate-bounce" />
-                <span className="ml-2">AI is thinking...</span>
+            <div className="rounded-2xl px-4 py-2 bg-gray-100 text-black rounded-bl-none shadow-sm">
+              <div className="flex items-center gap-1.5">
+                <div className="h-2 w-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
+                <div className="h-2 w-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
+                <div className="h-2 w-2 rounded-full bg-gray-400 animate-bounce" />
               </div>
             </div>
           </div>
@@ -229,21 +196,27 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
         <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="p-4 border-t">
-        <div className="flex space-x-4">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message..."
-            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={isLoading}
-          />
-          <Button type="submit" disabled={isLoading}>
-            <ViewHorizontalIcon className="h-5 w-5" />
-          </Button>
-        </div>
-      </form>
+      <div className="border-t bg-white p-4">
+        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
+          <div className="flex gap-2 items-center">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type your message..."
+              className="flex-1 p-2 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pl-4 pr-4"
+              disabled={isLoading}
+            />
+            <Button
+              type="submit"
+              disabled={isLoading}
+              className="rounded-full h-10 w-10 p-0 flex items-center justify-center"
+            >
+              <ViewHorizontalIcon className="h-5 w-5" />
+            </Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
