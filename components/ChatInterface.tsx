@@ -7,6 +7,7 @@ import { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { ChatRequestBody, StreamMessageType } from "@/lib/types";
 import { SSEParser } from "@/lib/utils";
+import WelcomeMessage from "@/components/WelcomeMessage";
 
 export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
   const messages = useQuery(api.messages.list, { chatId });
@@ -137,6 +138,8 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
   return (
     <div className="flex flex-col h-full bg-gray-50">
       <div className="flex-1 overflow-y-auto p-4 space-y-3 max-w-4xl mx-auto w-full">
+        {messages?.length === 0 && <WelcomeMessage />}
+
         {messages?.map((message: Doc<"messages">) => (
           <div
             key={message._id}
