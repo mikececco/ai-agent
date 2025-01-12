@@ -4,9 +4,10 @@ import { useRouter } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
-import { PlusIcon, TrashIcon } from "@radix-ui/react-icons";
+import { PlusIcon, TrashIcon, Cross2Icon } from "@radix-ui/react-icons";
 import TimeAgo from "react-timeago";
 import { Doc, Id } from "@/convex/_generated/dataModel";
+import { cn } from "@/lib/utils";
 
 function ChatRow({
   chat,
@@ -59,7 +60,13 @@ function ChatRow({
   );
 }
 
-export default function Sidebar() {
+export default function Sidebar({
+  isOpen,
+  onClose,
+}: {
+  isOpen?: boolean;
+  onClose?: () => void;
+}) {
   const router = useRouter();
   const chats = useQuery(api.chats.listChats);
   const createChat = useMutation(api.chats.createChat);
@@ -68,6 +75,7 @@ export default function Sidebar() {
   const handleNewChat = async () => {
     const chatId = await createChat({ title: "New Chat" });
     router.push(`/dashboard/chat/${chatId}`);
+    onClose?.();
   };
 
   const handleDeleteChat = (id: Id<"chats">) => {
@@ -75,10 +83,23 @@ export default function Sidebar() {
   };
 
   return (
-    <div className="w-64 bg-gray-50 border-r h-full flex flex-col">
-      <div className="p-4">
-        <Button onClick={handleNewChat} className="w-full">
+    <div
+      className={cn(
+        "fixed inset-y-0 left-0 z-50 w-64 bg-gray-50 border-r transform transition-transform duration-200 ease-in-out md:relative md:translate-x-0",
+        isOpen ? "translate-x-0" : "-translate-x-full"
+      )}
+    >
+      <div className="flex items-center justify-between p-4">
+        <Button onClick={handleNewChat} className="flex-1">
           <PlusIcon className="mr-2" /> New Chat
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          className="md:hidden ml-2"
+        >
+          <Cross2Icon className="h-4 w-4" />
         </Button>
       </div>
 
