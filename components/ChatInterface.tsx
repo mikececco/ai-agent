@@ -5,7 +5,6 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
-import { ViewHorizontalIcon } from "@radix-ui/react-icons";
 import { ChatRequestBody, StreamMessageType } from "@/lib/types";
 import { SSEParser } from "@/lib/utils";
 
@@ -136,23 +135,23 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-gray-50">
       <div className="flex-1 overflow-y-auto p-4 space-y-3 max-w-4xl mx-auto w-full">
         {messages?.map((message: Doc<"messages">) => (
           <div
             key={message._id}
             className={`flex ${
               message.role === "user" ? "justify-end" : "justify-start"
-            }`}
+            } animate-in slide-in-from-bottom-2`}
           >
             <div
-              className={`rounded-2xl px-4 py-2 max-w-[85%] md:max-w-[75%] shadow-sm ${
+              className={`rounded-2xl px-4 py-2.5 max-w-[85%] md:max-w-[75%] shadow-sm ring-1 ring-inset ${
                 message.role === "user"
-                  ? "bg-blue-500 text-white rounded-br-none"
-                  : "bg-gray-100 text-black rounded-bl-none"
+                  ? "bg-blue-600 text-white rounded-br-none ring-blue-700"
+                  : "bg-white text-gray-900 rounded-bl-none ring-gray-200"
               }`}
             >
-              <div className="whitespace-pre-wrap text-[15px]">
+              <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
                 <div
                   dangerouslySetInnerHTML={{
                     __html:
@@ -168,9 +167,9 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
           </div>
         ))}
         {streamedResponse && (
-          <div className="flex justify-start">
-            <div className="rounded-2xl px-4 py-2 max-w-[85%] md:max-w-[75%] bg-gray-100 text-black rounded-bl-none shadow-sm">
-              <div className="whitespace-pre-wrap text-[15px]">
+          <div className="flex justify-start animate-in slide-in-from-bottom-2">
+            <div className="rounded-2xl px-4 py-2.5 max-w-[85%] md:max-w-[75%] bg-white text-gray-900 rounded-bl-none shadow-sm ring-1 ring-inset ring-gray-200">
+              <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
                 <div
                   dangerouslySetInnerHTML={{
                     __html: formatTerminalOutput(
@@ -183,12 +182,12 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
           </div>
         )}
         {isLoading && !streamedResponse && (
-          <div className="flex justify-start">
-            <div className="rounded-2xl px-4 py-2 bg-gray-100 text-black rounded-bl-none shadow-sm">
+          <div className="flex justify-start animate-in fade-in-0">
+            <div className="rounded-2xl px-4 py-3 bg-white text-gray-900 rounded-bl-none shadow-sm ring-1 ring-inset ring-gray-200">
               <div className="flex items-center gap-1.5">
-                <div className="h-2 w-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
-                <div className="h-2 w-2 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
-                <div className="h-2 w-2 rounded-full bg-gray-400 animate-bounce" />
+                <div className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
+                <div className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
+                <div className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" />
               </div>
             </div>
           </div>
@@ -197,22 +196,42 @@ export default function ChatInterface({ chatId }: { chatId: Id<"chats"> }) {
       </div>
 
       <div className="border-t bg-white p-4">
-        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
-          <div className="flex gap-2 items-center">
+        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto relative">
+          <div className="relative flex items-center">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Type your message..."
-              className="flex-1 p-2 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pl-4 pr-4"
+              placeholder="Message AI Agent..."
+              className="flex-1 py-3 px-4 rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-12 bg-gray-50 placeholder:text-gray-500"
               disabled={isLoading}
             />
             <Button
               type="submit"
-              disabled={isLoading}
-              className="rounded-full h-10 w-10 p-0 flex items-center justify-center"
+              disabled={isLoading || !input.trim()}
+              className={`absolute right-1.5 rounded-xl h-9 w-9 p-0 flex items-center justify-center transition-all ${
+                input.trim()
+                  ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                  : "bg-gray-100 text-gray-400"
+              }`}
             >
-              <ViewHorizontalIcon className="h-5 w-5" />
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                className={`transition-transform duration-200 ${
+                  input.trim() ? "translate-x-0.5" : ""
+                }`}
+              >
+                <path
+                  d="M1.5 8H14.5M14.5 8L8.5 2M14.5 8L8.5 14"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </Button>
           </div>
         </form>

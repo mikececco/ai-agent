@@ -17,7 +17,7 @@ export default function Header({ onMenuClick }: { onMenuClick?: () => void }) {
           >
             <HamburgerMenuIcon className="h-5 w-5" />
           </Button>
-          <div className="font-semibold">AI Chat</div>
+          <div className="font-semibold">AI Agent Chat</div>
         </div>
         <UserButton afterSignOutUrl="/" />
       </div>
