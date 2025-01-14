@@ -17,6 +17,8 @@ export enum StreamMessageType {
   Error = "error",
   Connected = "connected",
   Done = "done",
+  ToolStart = "tool_start",
+  ToolEnd = "tool_end",
 }
 
 export interface BaseStreamMessage {
@@ -41,18 +43,28 @@ export interface DoneMessage extends BaseStreamMessage {
   type: StreamMessageType.Done;
 }
 
+export interface ToolStartMessage extends BaseStreamMessage {
+  type: StreamMessageType.ToolStart;
+  tool: string;
+  input: unknown;
+}
+
+export interface ToolEndMessage extends BaseStreamMessage {
+  type: StreamMessageType.ToolEnd;
+  tool: string;
+  output: unknown;
+}
+
 export type StreamMessage =
   | TokenMessage
   | ErrorMessage
   | ConnectedMessage
-  | DoneMessage;
+  | DoneMessage
+  | ToolStartMessage
+  | ToolEndMessage;
 
 export interface ChatRequestBody {
   messages: Message[];
   newMessage: string;
   chatId: Id<"chats">;
-}
-
-export interface ChatResponseBody {
-  error: string;
 }

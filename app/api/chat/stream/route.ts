@@ -2,7 +2,7 @@ import { submitQuestion } from "@/lib/langgraph";
 import { api } from "@/convex/_generated/api";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { getConvexClient } from "@/lib/convex";
 import {
   ChatRequestBody,
@@ -44,9 +44,9 @@ export async function POST(req: Request) {
     const response = new Response(stream.readable, {
       headers: {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
+        // "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
+        "X-Accel-Buffering": "no", // Disable buffering for nginx which is required for SSE to work properly
       },
     });
 
@@ -74,24 +74,65 @@ export async function POST(req: Request) {
 
         let fullResponse = "";
 
-        // Stream AI response
-        await submitQuestion(langChainMessages, chatId, async (token) => {
-          fullResponse += token;
+        try {
+          // Create the event stream
+          const eventStream = await submitQuestion(langChainMessages, chatId);
+
+          // Process the events
+          for await (const event of eventStream) {
+            // console.log("🔄 Event:", event);
+
+            if (event.event === "on_chat_model_stream") {
+              const token = event.data.chunk;
+              if (token) {
+                // Access the text property from the AIMessageChunk
+                const text = token.content.at(0)?.["text"];
+                if (text) {
+                  fullResponse += text;
+                  await sendSSEMessage(writer, {
+                    type: StreamMessageType.Token,
+                    token: text,
+                  });
+                }
+              }
+            } else if (event.event === "on_tool_start") {
+              await sendSSEMessage(writer, {
+                type: StreamMessageType.ToolStart,
+                tool: event.name || "unknown",
+                input: event.data.input,
+              });
+            } else if (event.event === "on_tool_end") {
+              const toolMessage = new ToolMessage(event.data.output);
+
+              await sendSSEMessage(writer, {
+                type: StreamMessageType.ToolEnd,
+                tool: toolMessage.lc_kwargs.name || "unknown",
+                output: event.data.output,
+              });
+            }
+          }
+
+          // Store complete response only if we have content
+          if (fullResponse) {
+            await convex.mutation(api.messages.store, {
+              chatId,
+              content: fullResponse,
+              role: "assistant",
+            });
+          }
+
+          // Send completion message
+          await sendSSEMessage(writer, { type: StreamMessageType.Done });
+        } catch (streamError) {
+          console.error("Error in event stream:", streamError);
           await sendSSEMessage(writer, {
-            type: StreamMessageType.Token,
-            token,
+            type: StreamMessageType.Error,
+            error:
+              streamError instanceof Error
+                ? streamError.message
+                : "Stream processing failed",
           });
-        });
-
-        // Store complete response
-        await convex.mutation(api.messages.store, {
-          chatId,
-          content: fullResponse,
-          role: "assistant",
-        });
-
-        // Send completion message
-        await sendSSEMessage(writer, { type: StreamMessageType.Done });
+        }
       } catch (error) {
         console.error("Error in stream:", error);
         await sendSSEMessage(writer, {

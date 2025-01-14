@@ -4,13 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { ChatRequestBody, StreamMessageType } from "@/lib/types";
-import { SSEParser } from "@/lib/utils";
 import WelcomeMessage from "@/components/WelcomeMessage";
+import { createSSEParser } from "@/lib/SSEParser";
 
 interface ChatInterfaceProps {
   chatId: Id<"chats">;
   initialMessages: Doc<"messages">[];
 }
+
+const formatMessage = (content: string): string => {
+  return content.replace(/\\n/g, "\n");
+};
 
 export default function ChatInterface({
   chatId,
@@ -20,38 +24,38 @@ export default function ChatInterface({
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [streamedResponse, setStreamedResponse] = useState("");
+  const [currentTool, setCurrentTool] = useState<{
+    name: string;
+    input: unknown;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamedResponse]);
 
-  const formatTerminalOutput = (text: string) => {
-    const regex = /---START---([\s\S]*?)---END---/g;
-    const terminalTemplate = (content: string) => `
-      <div class="bg-[#1e1e1e] text-white font-mono p-2 rounded-md my-2 overflow-x-auto whitespace-normal max-w-[600px]">
-        <div class="flex items-center gap-1.5 border-b border-gray-700 pb-1">
-          <span class="text-red-500">●</span>
-          <span class="text-yellow-500">●</span>
-          <span class="text-green-500">●</span>
-          <span class="text-gray-400 ml-1 text-sm">~/Executing...</span>
-        </div>
-        <div class="text-gray-400 mt-1">$ query</div>
-        <pre class="text-green-400 mt-0.5 whitespace-pre-wrap overflow-x-auto">${content.trim()}</pre>
+  const formatToolOutput = (output: unknown): string => {
+    if (typeof output === "string") return output;
+    return JSON.stringify(output, null, 2);
+  };
+
+  const formatTerminalOutput = (
+    tool: string,
+    input: unknown,
+    output: unknown
+  ) => {
+    return `<div class="bg-[#1e1e1e] text-white font-mono p-2 rounded-md my-2 overflow-x-auto whitespace-normal max-w-[600px]">
+      <div class="flex items-center gap-1.5 border-b border-gray-700 pb-1">
+        <span class="text-red-500">●</span>
+        <span class="text-yellow-500">●</span>
+        <span class="text-green-500">●</span>
+        <span class="text-gray-400 ml-1 text-sm">~/${tool}</span>
       </div>
-    `;
-
-    // If no command block markers are present, return as is
-    if (!text.includes("---START---")) return text;
-
-    // Handle complete command blocks
-    if (text.includes("---END---")) {
-      return text.replace(regex, (_, content) => terminalTemplate(content));
-    }
-
-    // Handle streaming command block
-    const [beforeStart, content] = text.split("---START---");
-    return beforeStart + terminalTemplate(content);
+      <div class="text-gray-400 mt-1">$ Input</div>
+      <pre class="text-yellow-400 mt-0.5 whitespace-pre-wrap overflow-x-auto">${formatToolOutput(input)}</pre>
+      <div class="text-gray-400 mt-2">$ Output</div>
+      <pre class="text-green-400 mt-0.5 whitespace-pre-wrap overflow-x-auto">${formatToolOutput(output)}</pre>
+    </div>`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -62,6 +66,7 @@ export default function ChatInterface({
     // Clear input and start loading
     setInput("");
     setStreamedResponse("");
+    setCurrentTool(null);
     setIsLoading(true);
 
     // Add optimistic user message
@@ -75,11 +80,13 @@ export default function ChatInterface({
 
     setMessages((prev) => [...prev, optimisticUserMessage]);
 
+    let fullResponse = "";
+
     try {
       const requestBody: ChatRequestBody = {
         messages: messages.map((msg) => ({
           role: msg.role,
-          content: msg.content.replace(/\\n/g, "\n"),
+          content: msg.content,
         })),
         newMessage: trimmedInput,
         chatId,
@@ -94,41 +101,81 @@ export default function ChatInterface({
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error);
+        throw new Error(await response.text());
       }
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      const parser = new SSEParser();
+      if (!response.body) {
+        throw new Error("No response body available");
+      }
 
-      if (!reader) throw new Error("No reader available");
-
-      let fullResponse = "";
+      const parser = createSSEParser();
+      const reader = response.body.getReader();
 
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          // Decode the chunk and parse SSE messages
-          const chunk = decoder.decode(value);
+        // Use async iterator pattern for cleaner streaming
+        for await (const chunk of readChunks(reader)) {
           const messages = parser.parse(chunk);
 
-          // Process each parsed message
           for (const message of messages) {
-            if (
-              message.type === StreamMessageType.Token &&
-              "token" in message
-            ) {
-              fullResponse += message.token;
-              setStreamedResponse(fullResponse);
-            } else if (
-              message.type === StreamMessageType.Error &&
-              "error" in message
-            ) {
-              console.error("Stream error:", message.error);
-              throw new Error(message.error);
+            switch (message.type) {
+              case StreamMessageType.Token:
+                if ("token" in message) {
+                  fullResponse += message.token;
+                  setStreamedResponse(fullResponse);
+                }
+                break;
+
+              case StreamMessageType.ToolStart:
+                if ("tool" in message) {
+                  setCurrentTool({
+                    name: message.tool,
+                    input: message.input,
+                  });
+                  fullResponse += formatTerminalOutput(
+                    message.tool,
+                    message.input,
+                    "Processing..."
+                  );
+                  setStreamedResponse(fullResponse);
+                }
+                break;
+
+              case StreamMessageType.ToolEnd:
+                if ("tool" in message && currentTool) {
+                  const lastTerminalIndex = fullResponse.lastIndexOf(
+                    '<div class="bg-[#1e1e1e]'
+                  );
+                  if (lastTerminalIndex !== -1) {
+                    fullResponse =
+                      fullResponse.substring(0, lastTerminalIndex) +
+                      formatTerminalOutput(
+                        message.tool,
+                        currentTool.input,
+                        message.output
+                      );
+                    setStreamedResponse(fullResponse);
+                  }
+                  setCurrentTool(null);
+                }
+                break;
+
+              case StreamMessageType.Error:
+                if ("error" in message) {
+                  throw new Error(message.error);
+                }
+                break;
+
+              case StreamMessageType.Done:
+                const assistantMessage: Doc<"messages"> = {
+                  _id: `temp_assistant_${Date.now()}`,
+                  chatId,
+                  content: fullResponse,
+                  role: "assistant",
+                  createdAt: Date.now(),
+                } as Doc<"messages">;
+                setMessages((prev) => [...prev, assistantMessage]);
+                setStreamedResponse("");
+                return; // Exit the loop
             }
           }
         }
@@ -137,14 +184,33 @@ export default function ChatInterface({
       }
     } catch (error) {
       console.error("Error sending message:", error);
-      // Remove optimistic message on error
       setMessages((prev) =>
         prev.filter((msg) => msg._id !== optimisticUserMessage._id)
+      );
+      setStreamedResponse(
+        formatTerminalOutput(
+          "error",
+          "Failed to process message",
+          error instanceof Error ? error.message : "Unknown error"
+        )
       );
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Helper function to create an async iterator for the ReadableStream
+  async function* readChunks(reader: ReadableStreamDefaultReader<Uint8Array>) {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        yield new TextDecoder().decode(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
@@ -168,12 +234,7 @@ export default function ChatInterface({
               <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
                 <div
                   dangerouslySetInnerHTML={{
-                    __html:
-                      message.role === "assistant"
-                        ? formatTerminalOutput(
-                            message.content.replace(/\\n/g, "\n")
-                          )
-                        : message.content.replace(/\\n/g, "\n"),
+                    __html: formatMessage(message.content),
                   }}
                 />
               </div>
@@ -186,9 +247,7 @@ export default function ChatInterface({
               <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
                 <div
                   dangerouslySetInnerHTML={{
-                    __html: formatTerminalOutput(
-                      streamedResponse.replace(/\\n/g, "\n")
-                    ),
+                    __html: formatMessage(streamedResponse),
                   }}
                 />
               </div>
