@@ -68,6 +68,7 @@ export default function Sidebar({
   onClose?: () => void;
 }) {
   const router = useRouter();
+
   const chats = useQuery(api.chats.listChats);
   const createChat = useMutation(api.chats.createChat);
   const deleteChat = useMutation(api.chats.deleteChat);
@@ -78,14 +79,18 @@ export default function Sidebar({
     onClose?.();
   };
 
-  const handleDeleteChat = (id: Id<"chats">) => {
-    deleteChat({ id });
+  const handleDeleteChat = async (id: Id<"chats">) => {
+    await deleteChat({ id });
+    // If we're currently viewing this chat, redirect to dashboard
+    if (window.location.pathname.includes(id)) {
+      router.push("/dashboard");
+    }
   };
 
   return (
     <div
       className={cn(
-        "fixed inset-y-0 left-0 z-50 w-64 bg-gray-50 border-r transform transition-transform duration-200 ease-in-out md:relative md:translate-x-0",
+        "fixed inset-y-0 left-0 z-50 w-64  border-r transform transition-transform duration-200 ease-in-out md:relative md:translate-x-0",
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}
     >

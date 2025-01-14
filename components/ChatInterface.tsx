@@ -13,7 +13,14 @@ interface ChatInterfaceProps {
 }
 
 const formatMessage = (content: string): string => {
-  return content.replace(/\\n/g, "\n");
+  // First replace newlines
+  content = content.replace(/\\n/g, "\n");
+
+  // Remove only the markers but keep the content between them
+  content = content.replace(/---START---\n?/g, "").replace(/\n?---END---/g, "");
+
+  // Trim any extra whitespace that might be left
+  return content.trim();
 };
 
 export default function ChatInterface({
@@ -213,7 +220,7 @@ export default function ChatInterface({
   }
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
+    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
       <div className="flex-1 overflow-y-auto p-4 space-y-3 max-w-4xl mx-auto w-full">
         {messages?.length === 0 && <WelcomeMessage />}
 
