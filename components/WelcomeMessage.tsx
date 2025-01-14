@@ -11,10 +11,6 @@ export default function WelcomeMessage() {
         <ul className="space-y-2 text-gray-600">
           <li className="flex items-start gap-2">
             <span className="text-blue-500 mt-1">•</span>
-            <span>Looking up information on Wikipedia</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-blue-500 mt-1">•</span>
             <span>Finding and analyzing YouTube video transcripts</span>
           </li>
           <li className="flex items-start gap-2">
@@ -24,6 +20,14 @@ export default function WelcomeMessage() {
           <li className="flex items-start gap-2">
             <span className="text-blue-500 mt-1">•</span>
             <span>Processing data with JSONata</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-blue-500 mt-1">•</span>
+            <span>Retrieve all Customer and Order data</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-blue-500 mt-1">•</span>
+            <span>Retrieve all Comments from the Comments API</span>
           </li>
         </ul>
         <p className="text-gray-600 mt-4 leading-relaxed">

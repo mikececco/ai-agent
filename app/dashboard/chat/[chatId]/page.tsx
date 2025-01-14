@@ -12,7 +12,7 @@ interface ChatPageProps {
 }
 
 export default async function ChatPage({ params }: ChatPageProps) {
-  const { chatId } = params;
+  const { chatId } = await params;
 
   // Get user authentication
   const { userId } = await auth();

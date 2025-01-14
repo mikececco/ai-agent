@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
+import Header from "@/components/Header";
+import { NavigationProvider } from "@/lib/context/navigation";
 import { Authenticated } from "convex/react";
 
 export default function DashboardLayout({
@@ -10,29 +10,18 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
   return (
-    <Authenticated>
+    <NavigationProvider>
       <div className="flex h-screen">
-        <Sidebar
-          isOpen={isSidebarOpen}
-          onClose={() => setIsSidebarOpen(false)}
-        />
+        <Authenticated>
+          <Sidebar />
+        </Authenticated>
 
-        {/* Overlay for mobile */}
-        {isSidebarOpen && (
-          <div
-            className="fixed inset-0 bg-black/20 z-40 md:hidden"
-            onClick={() => setIsSidebarOpen(false)}
-          />
-        )}
-
-        <main className="flex-1 flex flex-col">
-          <Header onMenuClick={() => setIsSidebarOpen(true)} />
-          {children}
-        </main>
+        <div className="flex-1 flex flex-col min-w-0">
+          <Header />
+          <main className="flex-1 overflow-y-auto">{children}</main>
+        </div>
       </div>
-    </Authenticated>
+    </NavigationProvider>
   );
 }

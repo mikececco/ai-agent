@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { ChatRequestBody, StreamMessageType } from "@/lib/types";
 import WelcomeMessage from "@/components/WelcomeMessage";
 import { createSSEParser } from "@/lib/SSEParser";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useUser } from "@clerk/clerk-react";
+import { BotIcon, MessageSquareMoreIcon } from "lucide-react";
 
 interface ChatInterfaceProps {
   chatId: Id<"chats">;
@@ -28,6 +31,7 @@ export default function ChatInterface({
   initialMessages,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Doc<"messages">[]>(initialMessages);
+  const { user } = useUser();
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [streamedResponse, setStreamedResponse] = useState("");
@@ -220,59 +224,97 @@ export default function ChatInterface({
   }
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 ">
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 max-w-4xl mx-auto w-full">
-        {messages?.length === 0 && <WelcomeMessage />}
+    <div className="flex flex-col h-[calc(100vh-theme(spacing.14))]">
+      <div className="flex-1 overflow-y-auto bg-gray-50 p-2 md:p-0">
+        <div className="flex flex-col justify-end min-h-full">
+          <div className="w-full max-w-4xl mx-auto">
+            <div className="p-4 space-y-3">
+              {messages?.length === 0 && <WelcomeMessage />}
 
-        {messages?.map((message: Doc<"messages">) => (
-          <div
-            key={message._id}
-            className={`flex ${
-              message.role === "user" ? "justify-end" : "justify-start"
-            } animate-in slide-in-from-bottom-2`}
-          >
-            <div
-              className={`rounded-2xl px-4 py-2.5 max-w-[85%] md:max-w-[75%] shadow-sm ring-1 ring-inset ${
-                message.role === "user"
-                  ? "bg-blue-600 text-white rounded-br-none ring-blue-700"
-                  : "bg-white text-gray-900 rounded-bl-none ring-gray-200"
-              }`}
-            >
-              <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
+              {messages?.map((message: Doc<"messages">) => (
                 <div
-                  dangerouslySetInnerHTML={{
-                    __html: formatMessage(message.content),
-                  }}
-                />
-              </div>
+                  key={message._id}
+                  className={`flex ${
+                    message.role === "user" ? "justify-end" : "justify-start"
+                  } animate-in slide-in-from-bottom-2 relative`}
+                >
+                  <div
+                    className={`rounded-2xl px-4 py-2.5 max-w-[85%] md:max-w-[75%] shadow-sm ring-1 ring-inset relative ${
+                      message.role === "user"
+                        ? "bg-blue-600 text-white rounded-br-none ring-blue-700"
+                        : "bg-white text-gray-900 rounded-bl-none ring-gray-200"
+                    }`}
+                  >
+                    <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
+                      <div
+                        dangerouslySetInnerHTML={{
+                          __html: formatMessage(message.content),
+                        }}
+                      />
+                    </div>
+                    <div
+                      className={`absolute bottom-0 ${
+                        message.role === "user"
+                          ? "right-0 translate-x-1/2 translate-y-1/2"
+                          : "left-0 -translate-x-1/2 translate-y-1/2"
+                      }`}
+                    >
+                      <div
+                        className={`w-8 h-8 rounded-full border-2 ${
+                          message.role === "user"
+                            ? "bg-white border-gray-100"
+                            : "bg-blue-600 border-white"
+                        } flex items-center justify-center shadow-sm`}
+                      >
+                        {message.role === "user" ? (
+                          <Avatar className="h-7 w-7">
+                            <AvatarImage src={user?.imageUrl} />
+                            <AvatarFallback>
+                              {user?.firstName?.charAt(0)}
+                              {user?.lastName?.charAt(0)}
+                            </AvatarFallback>
+                          </Avatar>
+                        ) : (
+                          <BotIcon className="h-5 w-5 text-white bg-blue-600 rounded-full" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {streamedResponse && (
+                <div className="flex justify-start animate-in slide-in-from-bottom-2 relative">
+                  <div className="rounded-2xl px-4 py-2.5 max-w-[85%] md:max-w-[75%] shadow-sm ring-1 ring-inset bg-white text-gray-900 rounded-bl-none ring-gray-200 relative">
+                    <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
+                      <div
+                        dangerouslySetInnerHTML={{
+                          __html: formatMessage(streamedResponse),
+                        }}
+                      />
+                    </div>
+                    <div className="absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2">
+                      <div className="w-8 h-8 rounded-full border-2 bg-blue-600 border-white flex items-center justify-center shadow-sm">
+                        <MessageSquareMoreIcon className="h-5 w-5 text-white bg-blue-600 rounded-full" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {isLoading && !streamedResponse && (
+                <div className="flex justify-start animate-in fade-in-0">
+                  <div className="rounded-2xl px-4 py-3 bg-white text-gray-900 rounded-bl-none shadow-sm ring-1 ring-inset ring-gray-200">
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
+                      <div className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
+                      <div className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" />
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
             </div>
           </div>
-        ))}
-        {streamedResponse && (
-          <div className="flex justify-start animate-in slide-in-from-bottom-2">
-            <div className="rounded-2xl px-4 py-2.5 max-w-[85%] md:max-w-[75%] bg-white text-gray-900 rounded-bl-none shadow-sm ring-1 ring-inset ring-gray-200">
-              <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
-                <div
-                  dangerouslySetInnerHTML={{
-                    __html: formatMessage(streamedResponse),
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-        {isLoading && !streamedResponse && (
-          <div className="flex justify-start animate-in fade-in-0">
-            <div className="rounded-2xl px-4 py-3 bg-white text-gray-900 rounded-bl-none shadow-sm ring-1 ring-inset ring-gray-200">
-              <div className="flex items-center gap-1.5">
-                <div className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
-                <div className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
-                <div className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" />
-              </div>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
+        </div>
       </div>
 
       <div className="border-t bg-white p-4">
