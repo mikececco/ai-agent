@@ -1,73 +1,45 @@
-import { SSE_DONE_MESSAGE } from "./types";
-import { StreamMessageType } from "./types";
-import { SSE_DATA_PREFIX } from "./types";
-import { StreamMessage } from "./types";
+import {
+  SSE_DONE_MESSAGE,
+  StreamMessageType,
+  SSE_DATA_PREFIX,
+  StreamMessage,
+} from "./types";
 
 /**
- * Processes a single SSE line and converts it to a StreamMessage
- * @param line - Single line from the SSE stream
- * @returns StreamMessage or null if line should be skipped
- */
-const processLine = (line: string): StreamMessage | null => {
-  const trimmedLine = line.trim();
-  if (!trimmedLine) return null;
-
-  if (!trimmedLine.startsWith(SSE_DATA_PREFIX)) return null;
-
-  const data = trimmedLine.substring(SSE_DATA_PREFIX.length);
-
-  if (data === SSE_DONE_MESSAGE) {
-    return { type: StreamMessageType.Done };
-  }
-
-  try {
-    const parsedData = JSON.parse(data) as StreamMessage;
-    if (Object.values(StreamMessageType).includes(parsedData.type)) {
-      return parsedData;
-    }
-    return null;
-  } catch (e) {
-    console.error("Error parsing SSE data:", e);
-    return {
-      type: StreamMessageType.Error,
-      error: "Failed to parse SSE message",
-    };
-  }
-};
-
-/**
- * Parses SSE chunks into an array of StreamMessages using functional programming
- * @param buffer - Current buffer state
- * @param chunk - New chunk to process
- * @returns Tuple of [new buffer state, array of parsed messages]
- */
-const parseChunk = (
-  buffer: string,
-  chunk: string
-): [string, StreamMessage[]] => {
-  const combinedBuffer = buffer + chunk;
-  const lines = combinedBuffer.split("\n");
-  const newBuffer = lines.pop() || "";
-
-  const messages = lines
-    .map(processLine)
-    .filter((msg): msg is StreamMessage => msg !== null);
-
-  return [newBuffer, messages];
-};
-
-/**
- * Server-Sent Events (SSE) Parser
- * Functional approach to parsing streaming data from AI agent responses
+ * Creates a parser for Server-Sent Events (SSE) streams.
+ * SSE allows real-time updates from server to client.
  */
 export const createSSEParser = () => {
   let buffer = "";
 
-  return {
-    parse: (chunk: string): StreamMessage[] => {
-      const [newBuffer, messages] = parseChunk(buffer, chunk);
-      buffer = newBuffer;
-      return messages;
-    },
+  const parse = (chunk: string): StreamMessage[] => {
+    // Combine buffer with new chunk and split into lines
+    const lines = (buffer + chunk).split("\n");
+    // Save last potentially incomplete line
+    buffer = lines.pop() || "";
+
+    return lines
+      .map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith(SSE_DATA_PREFIX)) return null;
+
+        const data = trimmed.substring(SSE_DATA_PREFIX.length);
+        if (data === SSE_DONE_MESSAGE) return { type: StreamMessageType.Done };
+
+        try {
+          const parsed = JSON.parse(data) as StreamMessage;
+          return Object.values(StreamMessageType).includes(parsed.type)
+            ? parsed
+            : null;
+        } catch {
+          return {
+            type: StreamMessageType.Error,
+            error: "Failed to parse SSE message",
+          };
+        }
+      })
+      .filter((msg): msg is StreamMessage => msg !== null);
   };
+
+  return { parse };
 };

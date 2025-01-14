@@ -7,6 +7,7 @@ import { ChatRequestBody, StreamMessageType } from "@/lib/types";
 import WelcomeMessage from "@/components/WelcomeMessage";
 import { createSSEParser } from "@/lib/SSEParser";
 import { MessageBubble } from "@/components/MessageBubble";
+import { ArrowRight } from "lucide-react";
 
 interface ChatInterfaceProps {
   chatId: Id<"chats">;
@@ -55,18 +56,38 @@ export default function ChatInterface({
     </div>`;
   };
 
+  /**
+   * Processes a ReadableStream from the SSE response.
+   * This function continuously reads chunks of data from the stream until it's done.
+   * Each chunk is decoded from Uint8Array to string and passed to the callback.
+   */
+  const processStream = async (
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    onChunk: (chunk: string) => void
+  ) => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        onChunk(new TextDecoder().decode(value));
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedInput = input.trim();
     if (!trimmedInput || isLoading) return;
 
-    // Clear input and start loading
+    // Reset UI state for new message
     setInput("");
     setStreamedResponse("");
     setCurrentTool(null);
     setIsLoading(true);
 
-    // Add optimistic user message
+    // Add user's message immediately for better UX
     const optimisticUserMessage: Doc<"messages"> = {
       _id: `temp_${Date.now()}`,
       chatId,
@@ -77,9 +98,11 @@ export default function ChatInterface({
 
     setMessages((prev) => [...prev, optimisticUserMessage]);
 
+    // Track complete response for saving to database
     let fullResponse = "";
 
     try {
+      // Prepare chat history and new message for API
       const requestBody: ChatRequestBody = {
         messages: messages.map((msg) => ({
           role: msg.role,
@@ -89,98 +112,99 @@ export default function ChatInterface({
         chatId,
       };
 
+      // Initialize SSE connection
       const response = await fetch("/api/chat/stream", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
       });
 
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
+      if (!response.ok) throw new Error(await response.text());
+      if (!response.body) throw new Error("No response body available");
 
-      if (!response.body) {
-        throw new Error("No response body available");
-      }
-
+      // Create SSE parser and stream reader
       const parser = createSSEParser();
       const reader = response.body.getReader();
 
-      try {
-        // Use async iterator pattern for cleaner streaming
-        for await (const chunk of readChunks(reader)) {
-          const messages = parser.parse(chunk);
+      // Process the stream chunks
+      await processStream(reader, (chunk) => {
+        // Parse SSE messages from the chunk
+        const messages = parser.parse(chunk);
 
-          for (const message of messages) {
-            switch (message.type) {
-              case StreamMessageType.Token:
-                if ("token" in message) {
-                  fullResponse += message.token;
+        // Handle each message based on its type
+        for (const message of messages) {
+          switch (message.type) {
+            case StreamMessageType.Token:
+              // Handle streaming tokens (normal text response)
+              if ("token" in message) {
+                fullResponse += message.token;
+                setStreamedResponse(fullResponse);
+              }
+              break;
+
+            case StreamMessageType.ToolStart:
+              // Handle start of tool execution (e.g. API calls, file operations)
+              if ("tool" in message) {
+                setCurrentTool({
+                  name: message.tool,
+                  input: message.input,
+                });
+                fullResponse += formatTerminalOutput(
+                  message.tool,
+                  message.input,
+                  "Processing..."
+                );
+                setStreamedResponse(fullResponse);
+              }
+              break;
+
+            case StreamMessageType.ToolEnd:
+              // Handle completion of tool execution
+              if ("tool" in message && currentTool) {
+                // Replace the "Processing..." message with actual output
+                const lastTerminalIndex = fullResponse.lastIndexOf(
+                  '<div class="bg-[#1e1e1e]'
+                );
+                if (lastTerminalIndex !== -1) {
+                  fullResponse =
+                    fullResponse.substring(0, lastTerminalIndex) +
+                    formatTerminalOutput(
+                      message.tool,
+                      currentTool.input,
+                      message.output
+                    );
                   setStreamedResponse(fullResponse);
                 }
-                break;
+                setCurrentTool(null);
+              }
+              break;
 
-              case StreamMessageType.ToolStart:
-                if ("tool" in message) {
-                  setCurrentTool({
-                    name: message.tool,
-                    input: message.input,
-                  });
-                  fullResponse += formatTerminalOutput(
-                    message.tool,
-                    message.input,
-                    "Processing..."
-                  );
-                  setStreamedResponse(fullResponse);
-                }
-                break;
+            case StreamMessageType.Error:
+              // Handle error messages from the stream
+              if ("error" in message) {
+                throw new Error(message.error);
+              }
+              break;
 
-              case StreamMessageType.ToolEnd:
-                if ("tool" in message && currentTool) {
-                  const lastTerminalIndex = fullResponse.lastIndexOf(
-                    '<div class="bg-[#1e1e1e]'
-                  );
-                  if (lastTerminalIndex !== -1) {
-                    fullResponse =
-                      fullResponse.substring(0, lastTerminalIndex) +
-                      formatTerminalOutput(
-                        message.tool,
-                        currentTool.input,
-                        message.output
-                      );
-                    setStreamedResponse(fullResponse);
-                  }
-                  setCurrentTool(null);
-                }
-                break;
-
-              case StreamMessageType.Error:
-                if ("error" in message) {
-                  throw new Error(message.error);
-                }
-                break;
-
-              case StreamMessageType.Done:
-                const assistantMessage: Doc<"messages"> = {
-                  _id: `temp_assistant_${Date.now()}`,
-                  chatId,
-                  content: fullResponse,
-                  role: "assistant",
-                  createdAt: Date.now(),
-                } as Doc<"messages">;
-                setMessages((prev) => [...prev, assistantMessage]);
-                setStreamedResponse("");
-                return; // Exit the loop
-            }
+            case StreamMessageType.Done:
+              // Handle completion of the entire response
+              const assistantMessage: Doc<"messages"> = {
+                _id: `temp_assistant_${Date.now()}`,
+                chatId,
+                content: fullResponse,
+                role: "assistant",
+                createdAt: Date.now(),
+              } as Doc<"messages">;
+              setMessages((prev) => [...prev, assistantMessage]);
+              setStreamedResponse("");
+              return;
           }
         }
-      } finally {
-        reader.releaseLock();
-      }
+      });
     } catch (error) {
+      // Handle any errors during streaming
       console.error("Error sending message:", error);
+      // Remove the optimistic user message if there was an error
       setMessages((prev) =>
         prev.filter((msg) => msg._id !== optimisticUserMessage._id)
       );
@@ -196,55 +220,45 @@ export default function ChatInterface({
     }
   };
 
-  // Helper function to create an async iterator for the ReadableStream
-  async function* readChunks(reader: ReadableStreamDefaultReader<Uint8Array>) {
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        yield new TextDecoder().decode(value);
-      }
-    } finally {
-      reader.releaseLock();
-    }
-  }
-
   return (
-    <div className="flex flex-col h-[calc(100vh-theme(spacing.14))]">
-      <div className="flex-1 overflow-y-auto bg-gray-50 p-2 md:p-0">
-        <div className="flex flex-col justify-end min-h-full">
-          <div className="w-full max-w-4xl mx-auto">
-            <div className="p-4 space-y-3">
-              {messages?.length === 0 && <WelcomeMessage />}
+    <main className="flex flex-col h-[calc(100vh-theme(spacing.14))]">
+      {/* Messages container */}
+      <section className="flex-1 overflow-y-auto bg-gray-50 p-2 md:p-0">
+        <div className="max-w-4xl mx-auto p-4 space-y-3">
+          {messages?.length === 0 && <WelcomeMessage />}
 
-              {messages?.map((message: Doc<"messages">) => (
-                <MessageBubble
-                  key={message._id}
-                  content={message.content}
-                  isUser={message.role === "user"}
-                />
-              ))}
+          {messages?.map((message: Doc<"messages">) => (
+            <MessageBubble
+              key={message._id}
+              content={message.content}
+              isUser={message.role === "user"}
+            />
+          ))}
 
-              {streamedResponse && <MessageBubble content={streamedResponse} />}
+          {streamedResponse && <MessageBubble content={streamedResponse} />}
 
-              {isLoading && !streamedResponse && (
-                <div className="flex justify-start animate-in fade-in-0">
-                  <div className="rounded-2xl px-4 py-3 bg-white text-gray-900 rounded-bl-none shadow-sm ring-1 ring-inset ring-gray-200">
-                    <div className="flex items-center gap-1.5">
-                      <div className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
-                      <div className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
-                      <div className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" />
-                    </div>
-                  </div>
+          {/* Loading indicator */}
+          {isLoading && !streamedResponse && (
+            <div className="flex justify-start animate-in fade-in-0">
+              <div className="rounded-2xl px-4 py-3 bg-white text-gray-900 rounded-bl-none shadow-sm ring-1 ring-inset ring-gray-200">
+                <div className="flex items-center gap-1.5">
+                  {[0.3, 0.15, 0].map((delay, i) => (
+                    <div
+                      key={i}
+                      className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce"
+                      style={{ animationDelay: `-${delay}s` }}
+                    />
+                  ))}
                 </div>
-              )}
-              <div ref={messagesEndRef} />
+              </div>
             </div>
-          </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
-      </div>
+      </section>
 
-      <div className="border-t bg-white p-4">
+      {/* Input form */}
+      <footer className="border-t bg-white p-4">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto relative">
           <div className="relative flex items-center">
             <input
@@ -264,27 +278,11 @@ export default function ChatInterface({
                   : "bg-gray-100 text-gray-400"
               }`}
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                className={`transition-transform duration-200 ${
-                  input.trim() ? "translate-x-0.5" : ""
-                }`}
-              >
-                <path
-                  d="M1.5 8H14.5M14.5 8L8.5 2M14.5 8L8.5 14"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <ArrowRight />
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </footer>
+    </main>
   );
 }
