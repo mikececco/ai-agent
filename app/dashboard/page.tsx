@@ -1,4 +1,4 @@
-import { BotIcon, MessageSquarePlusIcon } from "lucide-react";
+import { BotIcon } from "lucide-react";
 
 export default function DashboardPage() {
   return (
