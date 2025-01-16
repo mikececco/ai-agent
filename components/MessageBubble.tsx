@@ -10,7 +10,10 @@ interface MessageBubbleProps {
 }
 
 const formatMessage = (content: string): string => {
-  // First replace newlines
+  // First unescape backslashes
+  content = content.replace(/\\\\/g, "\\");
+
+  // Then handle newlines
   content = content.replace(/\\n/g, "\n");
 
   // Remove only the markers but keep the content between them

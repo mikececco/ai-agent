@@ -8,6 +8,8 @@ import WelcomeMessage from "@/components/WelcomeMessage";
 import { createSSEParser } from "@/lib/SSEParser";
 import { MessageBubble } from "@/components/MessageBubble";
 import { ArrowRight } from "lucide-react";
+import { getConvexClient } from "@/lib/convex";
+import { api } from "@/convex/_generated/api";
 
 interface ChatInterfaceProps {
   chatId: Id<"chats">;
@@ -42,7 +44,7 @@ export default function ChatInterface({
     input: unknown,
     output: unknown
   ) => {
-    return `<div class="bg-[#1e1e1e] text-white font-mono p-2 rounded-md my-2 overflow-x-auto whitespace-normal max-w-[600px]">
+    const terminalHtml = `<div class="bg-[#1e1e1e] text-white font-mono p-2 rounded-md my-2 overflow-x-auto whitespace-normal max-w-[600px]">
       <div class="flex items-center gap-1.5 border-b border-gray-700 pb-1">
         <span class="text-red-500">●</span>
         <span class="text-yellow-500">●</span>
@@ -54,6 +56,8 @@ export default function ChatInterface({
       <div class="text-gray-400 mt-2">$ Output</div>
       <pre class="text-green-400 mt-0.5 whitespace-pre-wrap overflow-x-auto">${formatToolOutput(output)}</pre>
     </div>`;
+
+    return `---START---\n${terminalHtml}\n---END---`;
   };
 
   /**
@@ -63,13 +67,13 @@ export default function ChatInterface({
    */
   const processStream = async (
     reader: ReadableStreamDefaultReader<Uint8Array>,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => Promise<void>
   ) => {
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        onChunk(new TextDecoder().decode(value));
+        await onChunk(new TextDecoder().decode(value));
       }
     } finally {
       reader.releaseLock();
@@ -127,7 +131,7 @@ export default function ChatInterface({
       const reader = response.body.getReader();
 
       // Process the stream chunks
-      await processStream(reader, (chunk) => {
+      await processStream(reader, async (chunk) => {
         // Parse SSE messages from the chunk
         const messages = parser.parse(chunk);
 
@@ -195,6 +199,15 @@ export default function ChatInterface({
                 role: "assistant",
                 createdAt: Date.now(),
               } as Doc<"messages">;
+
+              // Save the complete message to the database
+              const convex = getConvexClient();
+              await convex.mutation(api.messages.store, {
+                chatId,
+                content: fullResponse,
+                role: "assistant",
+              });
+
               setMessages((prev) => [...prev, assistantMessage]);
               setStreamedResponse("");
               return;

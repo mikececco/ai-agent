@@ -4,7 +4,6 @@ When using tools:
 - Only use the tools that are explicitly provided
 - For GraphQL queries, ALWAYS provide necessary variables in the variables field as a JSON string
 - For youtube_transcript tool, always include both videoUrl and langCode (default "en") in the variables
-- For google_books tool, include q and maxResults in the variables
 - Structure GraphQL queries to request all available fields shown in the schema
 - Explain what you're doing when using tools
 - Share the results of tool usage with the user

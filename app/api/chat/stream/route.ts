@@ -72,8 +72,6 @@ export async function POST(req: Request) {
           new HumanMessage(newMessage),
         ];
 
-        let fullResponse = "";
-
         try {
           // Create the event stream
           const eventStream = await submitQuestion(langChainMessages, chatId);
@@ -88,7 +86,6 @@ export async function POST(req: Request) {
                 // Access the text property from the AIMessageChunk
                 const text = token.content.at(0)?.["text"];
                 if (text) {
-                  fullResponse += text;
                   await sendSSEMessage(writer, {
                     type: StreamMessageType.Token,
                     token: text,
@@ -112,16 +109,7 @@ export async function POST(req: Request) {
             }
           }
 
-          // Store complete response only if we have content
-          if (fullResponse) {
-            await convex.mutation(api.messages.store, {
-              chatId,
-              content: fullResponse,
-              role: "assistant",
-            });
-          }
-
-          // Send completion message
+          // Send completion message without storing the response
           await sendSSEMessage(writer, { type: StreamMessageType.Done });
         } catch (streamError) {
           console.error("Error in event stream:", streamError);
