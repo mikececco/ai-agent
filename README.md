@@ -1,6 +1,11 @@
-# IBM AI Agent
+# Let's build an AI Agent that can use Tools in NEXT.JS 15! (LangChain, Clerk, Convex, TS, IBM)
 
 A sophisticated AI chat application built with Next.js, featuring real-time conversations, advanced prompt caching, and intelligent tool orchestration powered by LangChain and Claude 3.5 Sonnet.
+
+## Before You Get Started
+
+1. [Sign up for a Free Clerk account](https://go.clerk.com/R9MPryz)
+2. [Sign up for IBM's FREE WxFlows tool](https://ibm.biz/wxflows-sonny)
 
 ## Features
 
@@ -68,7 +73,7 @@ A sophisticated AI chat application built with Next.js, featuring real-time conv
 ## Prerequisites
 
 - Node.js (Latest LTS version recommended)
-- PNPM package manager
+- PNPM package manager or NPM/Yarn
 - Clerk account for authentication
 - Convex account for database
 - OpenAI/Anthropic API key for AI capabilities
@@ -110,57 +115,12 @@ pnpm dev
 
 The application will be available at `http://localhost:3000`
 
-## Project Structure
-
-- `/app` - Next.js app router pages and layouts
-- `/components` - Reusable React components
-- `/lib` - Utility functions and custom hooks
-  - `/lib/langgraph` - LangGraph implementation and tool orchestration
-  - `/lib/streaming` - Custom streaming solutions
-  - `/lib/cache` - Prompt caching implementation
-- `/constants` - Application constants and configurations
-- `/convex` - Convex database schema and queries
-- `/public` - Static assets
-- `/wxflows` - Workflow configurations and data source integrations
-
-## Development
-
-- `pnpm dev` - Start development server with Turbopack
-- `pnpm build` - Build the application
-- `pnpm start` - Start production server
-- `pnpm lint` - Run ESLint
-
-## Deployment
-
-### Production Deployment
-
-- Automated deployment via Vercel
-- Environment variable management
-- Production-ready configurations
-- Performance optimization strategies
-
-### Configuration Steps
-
-1. Set up environment variables in Vercel
-2. Configure Clerk authentication
-3. Set up Convex database
-4. Deploy wxflows integrations
-5. Enable prompt caching in production
-
-## Performance Optimization
+## Performance Optimizations
 
 - Implemented prompt caching
 - Optimized token usage
 - Efficient streaming implementation
 - Smart context window management
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## Level Up Your Dev Career 🚀
 
