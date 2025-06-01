@@ -3,10 +3,13 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useUser } from "@clerk/nextjs";
 import { BotIcon } from "lucide-react";
+import { MediaAttachment } from "@/lib/types";
+import { MediaDisplay } from "@/components/MediaDisplay";
 
 interface MessageBubbleProps {
   content: string;
   isUser?: boolean;
+  attachments?: MediaAttachment[];
 }
 
 const formatMessage = (content: string): string => {
@@ -23,7 +26,7 @@ const formatMessage = (content: string): string => {
   return content.trim();
 };
 
-export function MessageBubble({ content, isUser }: MessageBubbleProps) {
+export function MessageBubble({ content, isUser, attachments }: MessageBubbleProps) {
   const { user } = useUser();
 
   return (
@@ -35,9 +38,14 @@ export function MessageBubble({ content, isUser }: MessageBubbleProps) {
             : "bg-white text-gray-900 rounded-bl-none ring-gray-200"
         }`}
       >
-        <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
-          <div dangerouslySetInnerHTML={{ __html: formatMessage(content) }} />
-        </div>
+        {attachments && attachments.length > 0 && (
+          <MediaDisplay attachments={attachments} isUser={isUser} />
+        )}
+        {content && (
+          <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
+            <div dangerouslySetInnerHTML={{ __html: formatMessage(content) }} />
+          </div>
+        )}
         <div
           className={`absolute bottom-0 ${
             isUser

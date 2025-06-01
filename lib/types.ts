@@ -7,9 +7,19 @@ export const SSE_LINE_DELIMITER = "\n\n" as const;
 
 export type MessageRole = "user" | "assistant";
 
+// Media types
+export interface MediaAttachment {
+  type: "image" | "video" | "document" | "audio";
+  mimeType: string;
+  data: string; // Base64 encoded data or URL
+  name?: string;
+  size?: number;
+}
+
 export interface Message {
   role: MessageRole;
   content: string;
+  attachments?: MediaAttachment[]; // Add support for media attachments
 }
 
 export enum StreamMessageType {
@@ -67,4 +77,5 @@ export interface ChatRequestBody {
   messages: Message[];
   newMessage: string;
   chatId: Id<"chats">;
+  attachments?: MediaAttachment[]; // Add support for attachments in new messages
 }

@@ -20,6 +20,7 @@ import {
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
 import SYSTEM_MESSAGE from "@/constants/systemMessage";
+import { MediaAttachment } from "@/lib/types";
 
 // Trim the messages to manage conversation history
 const trimmer = trimMessages({
@@ -144,18 +145,31 @@ function addCachingHeaders(messages: BaseMessage[]): BaseMessage[] {
 
   // Helper to add cache control
   const addCache = (message: BaseMessage) => {
-    message.content = [
-      {
-        type: "text",
-        text: message.content as string,
-        cache_control: { type: "ephemeral" },
-      },
-    ];
+    // Check if content is already an array (has attachments)
+    if (Array.isArray(message.content)) {
+      // Find the text content and add cache control to it
+      const textContent = message.content.find(c => c.type === 'text') as any;
+      if (textContent && typeof textContent.text === 'string') {
+        textContent.cache_control = { type: "ephemeral" };
+      }
+    } else if (typeof message.content === 'string') {
+      // Convert string content to array format with cache control
+      message.content = [
+        {
+          type: "text",
+          text: message.content,
+          cache_control: { type: "ephemeral" },
+        },
+      ];
+    }
   };
 
   // Cache the last message
   // console.log("🤑🤑🤑 Caching last message");
-  addCache(cachedMessages.at(-1)!);
+  const lastMessage = cachedMessages.at(-1);
+  if (lastMessage) {
+    addCache(lastMessage);
+  }
 
   // Find and cache the second-to-last human message
   let humanCount = 0;
@@ -173,7 +187,52 @@ function addCachingHeaders(messages: BaseMessage[]): BaseMessage[] {
   return cachedMessages;
 }
 
-export async function submitQuestion(messages: BaseMessage[], chatId: string) {
+// Helper function to convert media attachments to content blocks
+function createContentWithMedia(text: string, attachments?: MediaAttachment[]): any[] {
+  const content: any[] = [{ type: "text", text }];
+  
+  if (attachments && attachments.length > 0) {
+    for (const attachment of attachments) {
+      if (attachment.type === "image") {
+        // Extract base64 data from data URL
+        const base64Data = attachment.data.split(',')[1] || attachment.data;
+        content.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: attachment.mimeType,
+            data: base64Data,
+          },
+        });
+      }
+      // Note: Claude currently only supports images
+      // For other file types, you might want to extract text or use tools
+    }
+  }
+  
+  return content;
+}
+
+export async function submitQuestion(
+  messages: BaseMessage[], 
+  chatId: string, 
+  attachments?: MediaAttachment[]
+) {
+  // If there are attachments, modify the last human message to include them
+  if (attachments && attachments.length > 0) {
+    const messagesWithMedia = [...messages];
+    const lastMessage = messagesWithMedia[messagesWithMedia.length - 1];
+    
+    if (lastMessage instanceof HumanMessage) {
+      const content = createContentWithMedia(lastMessage.content as string, attachments);
+      messagesWithMedia[messagesWithMedia.length - 1] = new HumanMessage({
+        content,
+      });
+    }
+    
+    messages = messagesWithMedia;
+  }
+
   // Add caching headers to messages
   const cachedMessages = addCachingHeaders(messages);
   // console.log("🔒🔒🔒 Messages:", cachedMessages);

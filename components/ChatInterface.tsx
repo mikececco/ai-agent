@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
-import { ChatRequestBody, StreamMessageType } from "@/lib/types";
+import { ChatRequestBody, StreamMessageType, MediaAttachment } from "@/lib/types";
 import WelcomeMessage from "@/components/WelcomeMessage";
 import { createSSEParser } from "@/lib/SSEParser";
 import { MessageBubble } from "@/components/MessageBubble";
 import { ArrowRight } from "lucide-react";
 import { getConvexClient } from "@/lib/convex";
 import { api } from "@/convex/_generated/api";
+import { FileUploadButton } from "@/components/FileUploadButton";
 
 interface ChatInterfaceProps {
   chatId: Id<"chats">;
@@ -28,6 +29,7 @@ export default function ChatInterface({
     name: string;
     input: unknown;
   } | null>(null);
+  const [attachments, setAttachments] = useState<MediaAttachment[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -91,6 +93,10 @@ export default function ChatInterface({
     setCurrentTool(null);
     setIsLoading(true);
 
+    // Store current attachments for the message
+    const messageAttachments = [...attachments];
+    setAttachments([]); // Clear attachments after submission
+
     // Add user's message immediately for better UX
     const optimisticUserMessage: Doc<"messages"> = {
       _id: `temp_${Date.now()}`,
@@ -98,6 +104,7 @@ export default function ChatInterface({
       content: trimmedInput,
       role: "user",
       createdAt: Date.now(),
+      attachments: messageAttachments, // Include attachments in the optimistic message
     } as Doc<"messages">;
 
     setMessages((prev) => [...prev, optimisticUserMessage]);
@@ -114,6 +121,7 @@ export default function ChatInterface({
         })),
         newMessage: trimmedInput,
         chatId,
+        attachments: messageAttachments, // Include attachments
       };
 
       // Initialize SSE connection
@@ -245,6 +253,7 @@ export default function ChatInterface({
               key={message._id}
               content={message.content}
               isUser={message.role === "user"}
+              attachments={message.attachments}
             />
           ))}
 
@@ -273,7 +282,12 @@ export default function ChatInterface({
       {/* Input form */}
       <footer className="border-t bg-white p-4">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto relative">
-          <div className="relative flex items-center">
+          <div className="relative flex items-center gap-2">
+            <FileUploadButton
+              onFilesSelected={setAttachments}
+              attachments={attachments}
+              disabled={isLoading}
+            />
             <input
               type="text"
               value={input}
@@ -284,9 +298,9 @@ export default function ChatInterface({
             />
             <Button
               type="submit"
-              disabled={isLoading || !input.trim()}
+              disabled={isLoading || (!input.trim() && attachments.length === 0)}
               className={`absolute right-1.5 rounded-xl h-9 w-9 p-0 flex items-center justify-center transition-all ${
-                input.trim()
+                input.trim() || attachments.length > 0
                   ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
                   : "bg-gray-100 text-gray-400"
               }`}

@@ -13,5 +13,16 @@ export default defineSchema({
     content: v.string(),
     role: v.union(v.literal("user"), v.literal("assistant")),
     createdAt: v.number(),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          type: v.union(v.literal("image"), v.literal("video"), v.literal("document"), v.literal("audio")),
+          mimeType: v.string(),
+          data: v.string(),
+          name: v.optional(v.string()),
+          size: v.optional(v.number()),
+        })
+      )
+    ),
   }).index("by_chat", ["chatId"]),
 });

@@ -32,12 +32,24 @@ export const send = mutation({
   args: {
     chatId: v.id("chats"),
     content: v.string(),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          type: v.union(v.literal("image"), v.literal("video"), v.literal("document"), v.literal("audio")),
+          mimeType: v.string(),
+          data: v.string(),
+          name: v.optional(v.string()),
+          size: v.optional(v.number()),
+        })
+      )
+    ),
   },
   handler: async (ctx, args) => {
     if (SHOW_COMMENTS) {
       console.log("📤 Sending message:", {
         chatId: args.chatId,
         content: args.content,
+        attachments: args.attachments?.length || 0,
       });
     }
 
@@ -57,12 +69,14 @@ export const send = mutation({
       content: args.content.replace(/\n/g, "\\n"),
       role: "user",
       createdAt: Date.now(),
+      attachments: args.attachments,
     });
 
     if (SHOW_COMMENTS) {
       console.log("✅ Saved user message:", {
         messageId,
         chatId: args.chatId,
+        attachments: args.attachments?.length || 0,
       });
     }
 
@@ -75,6 +89,17 @@ export const store = mutation({
     chatId: v.id("chats"),
     content: v.string(),
     role: v.union(v.literal("user"), v.literal("assistant")),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          type: v.union(v.literal("image"), v.literal("video"), v.literal("document"), v.literal("audio")),
+          mimeType: v.string(),
+          data: v.string(),
+          name: v.optional(v.string()),
+          size: v.optional(v.number()),
+        })
+      )
+    ),
   },
   handler: async (ctx, args) => {
     if (SHOW_COMMENTS) {
@@ -82,6 +107,7 @@ export const store = mutation({
         chatId: args.chatId,
         role: args.role,
         contentLength: args.content.length,
+        attachments: args.attachments?.length || 0,
       });
     }
 
@@ -94,6 +120,7 @@ export const store = mutation({
         .replace(/\\/g, "\\\\"), // Only escape backslashes
       role: args.role,
       createdAt: Date.now(),
+      attachments: args.attachments,
     });
 
     if (SHOW_COMMENTS) {

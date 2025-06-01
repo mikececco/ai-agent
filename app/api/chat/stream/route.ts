@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       return new Response("Unauthorized", { status: 401 });
     }
 
-    const { messages, newMessage, chatId } =
+    const { messages, newMessage, chatId, attachments } =
       (await req.json()) as ChatRequestBody;
     const convex = getConvexClient();
 
@@ -56,10 +56,11 @@ export async function POST(req: Request) {
         // Send initial connection established message
         await sendSSEMessage(writer, { type: StreamMessageType.Connected });
 
-        // Send user message to Convex
+        // Send user message to Convex with attachments
         await convex.mutation(api.messages.send, {
           chatId,
           content: newMessage,
+          attachments,
         });
 
         // Convert messages to LangChain format
@@ -73,8 +74,8 @@ export async function POST(req: Request) {
         ];
 
         try {
-          // Create the event stream
-          const eventStream = await submitQuestion(langChainMessages, chatId);
+          // Create the event stream with attachments
+          const eventStream = await submitQuestion(langChainMessages, chatId, attachments);
 
           // Process the events
           for await (const event of eventStream) {
