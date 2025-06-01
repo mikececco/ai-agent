@@ -114,8 +114,8 @@ export function MessageBubble({ content, isUser, attachments }: MessageBubblePro
           </div>
         </div>
         
-        {/* Download button for all AI responses */}
-        {!isUser && content && (
+        {/* Download button for AI responses without documents */}
+        {!isUser && content && !parsedContent.hasDocuments && (
           <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
             <DocumentDownload 
               content={content} 

@@ -31,10 +31,27 @@ export default function ChatInterface({
   } | null>(null);
   const [attachments, setAttachments] = useState<MediaAttachment[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const hasTriggeredInitialResponse = useRef(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamedResponse]);
+
+  // Check if we need to trigger an AI response for an unanswered message
+  useEffect(() => {
+    // Only run once when component mounts
+    if (hasTriggeredInitialResponse.current) return;
+    
+    // Check if the last message is from a user (needs AI response)
+    if (initialMessages.length > 0) {
+      const lastMessage = initialMessages[initialMessages.length - 1];
+      if (lastMessage.role === "user") {
+        hasTriggeredInitialResponse.current = true;
+        // Trigger AI response for the last user message
+        triggerAIResponse(lastMessage);
+      }
+    }
+  }, [initialMessages, chatId]);
 
   const formatToolOutput = (output: unknown): string => {
     if (typeof output === "string") return output;
@@ -79,6 +96,140 @@ export default function ChatInterface({
       }
     } finally {
       reader.releaseLock();
+    }
+  };
+
+  // Function to trigger AI response for a message
+  const triggerAIResponse = async (userMessage: Doc<"messages">) => {
+    setStreamedResponse("");
+    setCurrentTool(null);
+    setIsLoading(true);
+
+    let fullResponse = "";
+
+    try {
+      // Prepare chat history for API
+      const messageHistory = messages.filter(msg => msg._id !== userMessage._id);
+      const requestBody: ChatRequestBody = {
+        messages: messageHistory.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+        newMessage: userMessage.content,
+        chatId,
+        attachments: userMessage.attachments,
+      };
+
+      // Initialize SSE connection
+      const response = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+      if (!response.body) throw new Error("No response body available");
+
+      // Create SSE parser and stream reader
+      const parser = createSSEParser();
+      const reader = response.body.getReader();
+
+      // Process the stream chunks
+      await processStream(reader, async (chunk) => {
+        // Parse SSE messages from the chunk
+        const messages = parser.parse(chunk);
+
+        // Handle each message based on its type
+        for (const message of messages) {
+          switch (message.type) {
+            case StreamMessageType.Token:
+              // Handle streaming tokens (normal text response)
+              if ("token" in message) {
+                fullResponse += message.token;
+                setStreamedResponse(fullResponse);
+              }
+              break;
+
+            case StreamMessageType.ToolStart:
+              // Handle start of tool execution (e.g. API calls, file operations)
+              if ("tool" in message) {
+                setCurrentTool({
+                  name: message.tool,
+                  input: message.input,
+                });
+                fullResponse += formatTerminalOutput(
+                  message.tool,
+                  message.input,
+                  "Processing..."
+                );
+                setStreamedResponse(fullResponse);
+              }
+              break;
+
+            case StreamMessageType.ToolEnd:
+              // Handle completion of tool execution
+              if ("tool" in message && currentTool) {
+                // Replace the "Processing..." message with actual output
+                const lastTerminalIndex = fullResponse.lastIndexOf(
+                  '<div class="bg-[#1e1e1e]'
+                );
+                if (lastTerminalIndex !== -1) {
+                  fullResponse =
+                    fullResponse.substring(0, lastTerminalIndex) +
+                    formatTerminalOutput(
+                      message.tool,
+                      currentTool.input,
+                      message.output
+                    );
+                  setStreamedResponse(fullResponse);
+                }
+                setCurrentTool(null);
+              }
+              break;
+
+            case StreamMessageType.Error:
+              // Handle error messages from the stream
+              if ("error" in message) {
+                throw new Error(message.error);
+              }
+              break;
+
+            case StreamMessageType.Done:
+              // Handle completion of the entire response
+              const assistantMessage: Doc<"messages"> = {
+                _id: `temp_assistant_${Date.now()}`,
+                chatId,
+                content: fullResponse,
+                role: "assistant",
+                createdAt: Date.now(),
+              } as Doc<"messages">;
+
+              // Save the complete message to the database
+              const convex = getConvexClient();
+              await convex.mutation(api.messages.store, {
+                chatId,
+                content: fullResponse,
+                role: "assistant",
+              });
+
+              setMessages((prev) => [...prev, assistantMessage]);
+              setStreamedResponse("");
+              return;
+          }
+        }
+      });
+    } catch (error) {
+      // Handle any errors during streaming
+      console.error("Error getting AI response:", error);
+      setStreamedResponse(
+        formatTerminalOutput(
+          "error",
+          "Failed to get AI response",
+          error instanceof Error ? error.message : "Unknown error"
+        )
+      );
+    } finally {
+      setIsLoading(false);
     }
   };
 

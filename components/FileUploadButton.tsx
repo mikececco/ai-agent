@@ -16,7 +16,8 @@ const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp
 const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/webm", "video/ogg"];
 const ALLOWED_AUDIO_TYPES = ["audio/mpeg", "audio/wav", "audio/ogg", "audio/webm"];
 const ALLOWED_DOCUMENT_TYPES = ["application/pdf", "text/plain", "application/msword", 
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/zip", "application/x-zip-compressed", "application/x-zip"];
 
 export function FileUploadButton({ onFilesSelected, attachments, disabled }: FileUploadButtonProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);

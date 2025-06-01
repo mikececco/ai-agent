@@ -72,12 +72,10 @@ export default function Sidebar() {
   const { isMobileNavOpen, closeMobileNav } = useNavigation();
 
   const chats = useQuery(api.chats.listChats);
-  const createChat = useMutation(api.chats.createChat);
   const deleteChat = useMutation(api.chats.deleteChat);
 
   const handleNewChat = async () => {
-    const chatId = await createChat({ title: "New Chat" });
-    router.push(`/dashboard/chat/${chatId}`);
+    router.push("/dashboard/chat/new");
     closeMobileNav();
   };
 

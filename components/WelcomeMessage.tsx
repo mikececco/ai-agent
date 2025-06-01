@@ -6,7 +6,7 @@ export default function WelcomeMessage() {
           Welcome to AI Agent Chat! 👋
         </h2>
         <p className="text-gray-600 mb-4 leading-relaxed">
-          I can help you with:
+          Upload your iMapper scans and I will help you create a DCE document.
         </p>
         <ul className="space-y-2 text-gray-600">
           <li className="flex items-start gap-2">
