@@ -235,155 +235,48 @@ export default function ChatInterface({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedInput = input.trim();
-    if (!trimmedInput || isLoading) return;
+    if ((!input.trim() && attachments.length === 0) || isLoading) return;
 
-    // Reset UI state for new message
+    // Reset UI state
     setInput("");
+    setAttachments([]);
     setStreamedResponse("");
     setCurrentTool(null);
     setIsLoading(true);
 
-    // Store current attachments for the message
-    const messageAttachments = [...attachments];
-    setAttachments([]); // Clear attachments after submission
-
-    // Add user's message immediately for better UX
-    const optimisticUserMessage: Doc<"messages"> = {
-      _id: `temp_${Date.now()}`,
-      chatId,
-      content: trimmedInput,
-      role: "user",
-      createdAt: Date.now(),
-      attachments: messageAttachments, // Include attachments in the optimistic message
-    } as Doc<"messages">;
-
-    setMessages((prev) => [...prev, optimisticUserMessage]);
-
-    // Track complete response for saving to database
-    let fullResponse = "";
+    const messageContent = input.trim();
 
     try {
-      // Prepare chat history and new message for API
-      const requestBody: ChatRequestBody = {
-        messages: messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        })),
-        newMessage: trimmedInput,
+      // Create user message
+      const userMessage: Doc<"messages"> = {
+        _id: `temp_${Date.now()}`,
         chatId,
-        attachments: messageAttachments, // Include attachments
-      };
+        content: messageContent,
+        role: "user",
+        createdAt: Date.now(),
+        attachments: attachments.length > 0 ? attachments : undefined,
+      } as Doc<"messages">;
 
-      // Initialize SSE connection
-      const response = await fetch("/api/chat/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+      setMessages((prev) => [...prev, userMessage]);
+
+      // Save message to database
+      const convex = getConvexClient();
+      await convex.mutation(api.messages.send, {
+        chatId,
+        content: messageContent,
+        attachments: attachments.length > 0 ? attachments : undefined,
       });
 
-      if (!response.ok) throw new Error(await response.text());
-      if (!response.body) throw new Error("No response body available");
+      console.log(`Sent message with ${attachments.length} attachments`);
 
-      // Create SSE parser and stream reader
-      const parser = createSSEParser();
-      const reader = response.body.getReader();
-
-      // Process the stream chunks
-      await processStream(reader, async (chunk) => {
-        // Parse SSE messages from the chunk
-        const messages = parser.parse(chunk);
-
-        // Handle each message based on its type
-        for (const message of messages) {
-          switch (message.type) {
-            case StreamMessageType.Token:
-              // Handle streaming tokens (normal text response)
-              if ("token" in message) {
-                fullResponse += message.token;
-                setStreamedResponse(fullResponse);
-              }
-              break;
-
-            case StreamMessageType.ToolStart:
-              // Handle start of tool execution (e.g. API calls, file operations)
-              if ("tool" in message) {
-                setCurrentTool({
-                  name: message.tool,
-                  input: message.input,
-                });
-                fullResponse += formatTerminalOutput(
-                  message.tool,
-                  message.input,
-                  "Processing..."
-                );
-                setStreamedResponse(fullResponse);
-              }
-              break;
-
-            case StreamMessageType.ToolEnd:
-              // Handle completion of tool execution
-              if ("tool" in message && currentTool) {
-                // Replace the "Processing..." message with actual output
-                const lastTerminalIndex = fullResponse.lastIndexOf(
-                  '<div class="bg-[#1e1e1e]'
-                );
-                if (lastTerminalIndex !== -1) {
-                  fullResponse =
-                    fullResponse.substring(0, lastTerminalIndex) +
-                    formatTerminalOutput(
-                      message.tool,
-                      currentTool.input,
-                      message.output
-                    );
-                  setStreamedResponse(fullResponse);
-                }
-                setCurrentTool(null);
-              }
-              break;
-
-            case StreamMessageType.Error:
-              // Handle error messages from the stream
-              if ("error" in message) {
-                throw new Error(message.error);
-              }
-              break;
-
-            case StreamMessageType.Done:
-              // Handle completion of the entire response
-              const assistantMessage: Doc<"messages"> = {
-                _id: `temp_assistant_${Date.now()}`,
-                chatId,
-                content: fullResponse,
-                role: "assistant",
-                createdAt: Date.now(),
-              } as Doc<"messages">;
-
-              // Save the complete message to the database
-              const convex = getConvexClient();
-              await convex.mutation(api.messages.store, {
-                chatId,
-                content: fullResponse,
-                role: "assistant",
-              });
-
-              setMessages((prev) => [...prev, assistantMessage]);
-              setStreamedResponse("");
-              return;
-          }
-        }
-      });
+      // Trigger AI response
+      await triggerAIResponse(userMessage);
     } catch (error) {
-      // Handle any errors during streaming
-      console.error("Error sending message:", error);
-      // Remove the optimistic user message if there was an error
-      setMessages((prev) =>
-        prev.filter((msg) => msg._id !== optimisticUserMessage._id)
-      );
+      console.error("Failed to send message:", error);
       setStreamedResponse(
         formatTerminalOutput(
           "error",
-          "Failed to process message",
+          "Failed to send message",
           error instanceof Error ? error.message : "Unknown error"
         )
       );

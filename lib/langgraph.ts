@@ -194,19 +194,31 @@ function createContentWithMedia(text: string, attachments?: MediaAttachment[]): 
   if (attachments && attachments.length > 0) {
     for (const attachment of attachments) {
       if (attachment.type === "image") {
-        // Extract base64 data from data URL
-        const base64Data = attachment.data.split(',')[1] || attachment.data;
-        content.push({
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: attachment.mimeType,
-            data: base64Data,
-          },
-        });
+        if (attachment.url) {
+          // For URL-based attachments, include the URL in the text
+          content.push({ 
+            type: "text", 
+            text: `\n[Image: ${attachment.name || 'Uploaded image'} - ${attachment.url}]\n` 
+          });
+        } else if (attachment.data) {
+          // For base64 attachments (backward compatibility)
+          const base64Data = attachment.data.split(',')[1] || attachment.data;
+          content.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: attachment.mimeType,
+              data: base64Data,
+            },
+          });
+        }
+      } else {
+        // For non-image files, include the URL or mention in the text
+        const fileInfo = attachment.url 
+          ? `[${attachment.type}: ${attachment.name || 'File'} - ${attachment.url}]`
+          : `[${attachment.type}: ${attachment.name || 'File'}]`;
+        content.push({ type: "text", text: `\n${fileInfo}\n` });
       }
-      // Note: Claude currently only supports images
-      // For other file types, you might want to extract text or use tools
     }
   }
   

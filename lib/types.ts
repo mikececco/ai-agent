@@ -11,7 +11,9 @@ export type MessageRole = "user" | "assistant";
 export interface MediaAttachment {
   type: "image" | "video" | "document" | "audio";
   mimeType: string;
-  data: string; // Base64 encoded data or URL
+  data?: string; // Optional for backward compatibility
+  storageId?: string; // New field for Convex file storage
+  url?: string; // URL to access the file
   name?: string;
   size?: number;
 }

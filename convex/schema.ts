@@ -18,7 +18,9 @@ export default defineSchema({
         v.object({
           type: v.union(v.literal("image"), v.literal("video"), v.literal("document"), v.literal("audio")),
           mimeType: v.string(),
-          data: v.string(),
+          data: v.optional(v.string()),
+          storageId: v.optional(v.string()),
+          url: v.optional(v.string()),
           name: v.optional(v.string()),
           size: v.optional(v.number()),
         })

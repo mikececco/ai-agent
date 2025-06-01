@@ -2,7 +2,7 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useUser } from "@clerk/nextjs";
-import { BotIcon, Download } from "lucide-react";
+import { BotIcon, Download, FileIcon } from "lucide-react";
 import { MediaAttachment } from "@/lib/types";
 import { MediaDisplay } from "@/components/MediaDisplay";
 import { parseDocumentBlocks } from "@/lib/documentParser";
@@ -30,11 +30,37 @@ const formatMessage = (content: string): string => {
   return content.trim();
 };
 
-export function MessageBubble({ content, isUser, attachments }: MessageBubbleProps) {
+export function MessageBubble({ content, isUser = false, attachments }: MessageBubbleProps) {
   const { user } = useUser();
   
+  const downloadFile = (url: string, filename: string, mimeType: string) => {
+    // For base64 data URLs
+    if (url.startsWith('data:')) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      // For regular URLs, open in new tab or trigger download
+      window.open(url, '_blank');
+    }
+  };
+
   // Parse document blocks from the content
   const parsedContent = parseDocumentBlocks(content);
+
+  // Separate images and other files
+  const images: MediaAttachment[] = [];
+  const otherFiles: MediaAttachment[] = [];
+  attachments?.forEach((attachment) => {
+    if (attachment.mimeType && attachment.mimeType.startsWith('image/')) {
+      images.push(attachment);
+    } else {
+      otherFiles.push(attachment);
+    }
+  });
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} group`}>
@@ -84,6 +110,64 @@ export function MessageBubble({ content, isUser, attachments }: MessageBubblePro
                 <div dangerouslySetInnerHTML={{ __html: formatMessage(content) }} />
               </div>
             )
+          )}
+
+          {/* Display Images */}
+          {images.length > 0 && (
+            <div className={`grid gap-2 mt-2 ${
+              images.length === 1 ? 'grid-cols-1' : 
+              images.length === 2 ? 'grid-cols-2' : 
+              'grid-cols-3'
+            }`}>
+              {images.map((img, idx) => (
+                <div key={idx} className="relative group">
+                  <img 
+                    src={img.url || img.data || ''} 
+                    alt={img.name || `Image ${idx + 1}`}
+                    className="rounded-lg w-full h-auto cursor-pointer hover:opacity-95 transition-opacity"
+                    onClick={() => window.open(img.url || img.data, '_blank')}
+                  />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      downloadFile(img.url || img.data || '', img.name || `image-${idx + 1}.jpg`, img.mimeType);
+                    }}
+                    className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Download image"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Display Other Files */}
+          {otherFiles.length > 0 && (
+            <div className="space-y-2 mt-2">
+              {otherFiles.map((file, idx) => (
+                <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <FileIcon className="w-5 h-5 text-gray-600" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {file.name || `File ${idx + 1}`}
+                    </p>
+                    {file.size && (
+                      <p className="text-xs text-gray-500">
+                        {(file.size / 1024).toFixed(1)} KB
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => downloadFile(file.url || file.data || '', file.name || `file-${idx + 1}`, file.mimeType)}
+                    className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors"
+                    title="Download file"
+                  >
+                    <Download className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
